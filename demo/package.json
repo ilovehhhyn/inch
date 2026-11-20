@@ -1,0 +1,12 @@
+{
+  "name": "margin-demo-render",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node render-film.mjs margin-launch.html margin-demo.mp4"
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.2.0",
+    "puppeteer-core": "23.11.1"
+  }
+}

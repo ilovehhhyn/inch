@@ -1,0 +1,794 @@
+<meta charset="utf-8">
+<title>Margin Launch Film</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a 1920x1080 film stage scaled to the column width, then the brainstorm and the prompt below it. */
+:root {
+  color-scheme: dark;
+  --page: #101114;
+  --page-raised: #17181c;
+  --line: #2a2b31;
+  --text: #ecebe6;
+  --muted: #9b9a94;
+  --lamp: #f2c14e;          /* amber: the film's one accent, used only outside the product UI */
+  --ink: #1d1d1b;
+  --app: #ffffff;
+  --app-soft: #f7f7f5;
+  --app-line: #e8e7e3;
+  --desk-a: #c9cec6;
+  --desk-b: #9aa49c;
+  --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+html, body { background: var(--page); color: var(--text); }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 1.55; }
+.wrap {
+  max-width: 1240px; margin: 0 auto;
+  padding-block: 40px 96px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 40px;
+}
+header.top { display: flex; flex-direction: column; gap: 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--lamp); }
+h1 { font-size: clamp(36px, 6vw, 64px); line-height: 1; margin: 0; letter-spacing: -0.03em; font-weight: 600; }
+.lede { color: var(--muted); max-width: 66ch; margin: 0; font-size: 17px; }
+kbd { display: inline-flex; align-items: center; gap: 2px; font-family: var(--font-mono); font-size: 0.85em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; background: var(--page-raised); color: var(--text); line-height: 1.3; }
+.cmd { display: inline-flex; align-items: center; }
+.cmd svg { width: 0.95em; height: 0.95em; }
+
+/* Player */
+.player { display: flex; flex-direction: column; gap: 12px; }
+.viewport { position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 14px; background: #000; box-shadow: 0 30px 80px rgba(0,0,0,0.45); }
+.stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; background: #0c0d10; overflow: hidden; font-family: var(--font-ui); }
+.controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.btn { font: 500 14px var(--font-ui); color: var(--text); background: var(--page-raised); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible, #scrub:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; }
+#scrub { flex: 1; min-width: 160px; accent-color: var(--lamp); }
+.clock { font-family: var(--font-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Film: camera, desktop and the app window ---------- */
+.camera { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; will-change: transform; }
+.desktop { position: absolute; inset: 0; background: radial-gradient(1200px 700px at 30% 20%, var(--desk-a), var(--desk-b)); }
+.window { position: absolute; left: 160px; top: 110px; width: 1600px; height: 860px; border-radius: 18px; background: var(--app); overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 40px 120px rgba(20, 30, 25, 0.35), 0 0 0 1px rgba(0,0,0,0.08); color: var(--ink); }
+.titlebar { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--app-soft); border-bottom: 1px solid var(--app-line); }
+.dot { width: 13px; height: 13px; border-radius: 50%; }
+.dot.r { background: #ec6a5e; } .dot.y { background: #f4bf4f; } .dot.g { background: #61c554; }
+.body { flex: 1; display: flex; min-height: 0; }
+.sidebar { width: 240px; flex: none; background: var(--app-soft); border-right: 1px solid var(--app-line); padding: 18px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
+.side-item { padding: 9px 10px; border-radius: 10px; color: #55544f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-item.on { background: #ebeae6; color: var(--ink); font-weight: 500; }
+.side-label { font-size: 13px; color: #9a9993; padding: 14px 10px 4px; }
+.area { flex: 1; position: relative; overflow: hidden; }
+.main-col { position: absolute; top: 0; bottom: 0; left: 320px; width: 720px; }
+.view { position: absolute; inset: 0; overflow: hidden; }
+.thread { position: absolute; left: 0; right: 0; top: 0; padding: 36px 20px 0; display: flex; flex-direction: column; gap: 28px; font-size: 19px; line-height: 1.62; }
+.u { align-self: flex-end; background: #f1f0ed; border-radius: 22px; padding: 11px 20px; max-width: 470px; }
+.a p { margin: 0 0 14px; }
+.a h4 { margin: 22px 0 6px; font-size: 19px; font-weight: 600; }
+code, .w.c { font-family: var(--font-mono); font-size: 0.88em; }
+.w.c { background: #f1f0ed; border-radius: 4px; padding: 1px 4px; }
+.later { opacity: 0; }
+.w { opacity: 0; }
+.w.on { opacity: 1; }
+.fade { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; background: linear-gradient(rgba(255,255,255,0), #fff 55%); pointer-events: none; }
+.composer { position: absolute; left: 10px; right: 10px; bottom: 24px; height: 64px; border: 1px solid #e3e1db; border-radius: 32px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 14px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.07); box-sizing: border-box; }
+.plus { width: 36px; height: 36px; border-radius: 50%; color: #77766f; display: grid; place-items: center; font-size: 24px; flex: none; }
+.input { flex: 1; font-size: 20px; min-height: 30px; white-space: nowrap; overflow: hidden; }
+.input.is-empty::before { content: "Ask anything"; color: #a7a6a0; }
+.input .caret { display: inline-block; width: 2px; height: 22px; background: var(--ink); vertical-align: -4px; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+.input.is-empty .caret { display: none; }
+@keyframes blink { 50% { opacity: 0; } }
+.send { width: 40px; height: 40px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 20px; flex: none; }
+
+/* Side panel: code diff on top, side chat below. */
+.side { position: absolute; top: 0; right: 0; bottom: 0; width: 600px; background: #fbfbf9; border-left: 1px solid var(--app-line); box-shadow: -20px 0 40px rgba(0,0,0,0.04); }
+.pane-head { position: absolute; left: 0; right: 0; top: 0; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; border-bottom: 1px solid var(--app-line); font-weight: 600; font-size: 16px; background: #fbfbf9; z-index: 1; }
+.pane-head span { color: #9a9993; font-weight: 400; font-size: 14px; }
+.pane-head .stat { font-family: var(--font-mono); font-size: 14px; color: #6f6e68; }
+.pane-head .stat b { color: #1a7f37; font-weight: 500; } .pane-head .stat i { color: #cf222e; font-style: normal; }
+.diff-pane { position: absolute; left: 0; right: 0; top: 0; height: 430px; border-bottom: 1px solid #dddcd6; background: #fff; }
+.diff-pane .view { top: 48px; }
+.diff { position: absolute; left: 0; right: 0; top: 0; font: 15px/26px var(--font-mono); color: #24292f; }
+.file { height: 36px; display: flex; align-items: center; padding: 0 16px; background: #f6f8fa; border-block: 1px solid #e5e7ea; font-weight: 500; font-size: 14px; color: #3b3f45; }
+.dl { display: flex; white-space: pre; overflow: hidden; }
+.dl .n { width: 46px; flex: none; text-align: right; padding-right: 10px; color: #8c959f; }
+.dl .s { width: 18px; flex: none; color: #8c959f; }
+.dl.add { background: #e6ffec; } .dl.add .s { color: #1a7f37; }
+.dl.del { background: #ffebe9; } .dl.del .s { color: #cf222e; }
+.chat-pane { position: absolute; left: 0; right: 0; top: 430px; bottom: 0; }
+.chat-pane .view { top: 48px; bottom: 80px; }
+.chat-pane .thread { padding: 20px 22px 0; font-size: 17px; gap: 18px; line-height: 1.55; }
+.chat-pane .u { padding: 8px 16px; border-radius: 18px; }
+.chat-pane .a p { margin: 0 0 8px; }
+.chat-pane .composer { left: 16px; right: 16px; bottom: 14px; height: 52px; border-radius: 26px; }
+.chat-pane .input { font-size: 17px; }
+.chat-pane .input.is-empty::before { content: "Reply in side chat"; }
+.chat-pane .send { width: 34px; height: 34px; font-size: 17px; }
+.chat-pane .plus { width: 30px; height: 30px; font-size: 20px; }
+.pointer { position: absolute; left: 0; top: 0; width: 30px; height: 30px; opacity: 0; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); }
+
+/* ---------- Film: overlays outside the camera (never part of the product UI) ---------- */
+.layer { position: absolute; inset: 0; pointer-events: none; }
+.dim { background: #07080a; opacity: 0; }
+.black { background: #07080a; }
+.titles { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding-left: 240px; gap: 6px; }
+.titles div { font-size: 128px; font-weight: 600; letter-spacing: -0.045em; line-height: 1.04; color: #f3f1ea; opacity: 0; }
+.titles .soft { color: #8f8d86; }
+.hud { display: flex; justify-content: center; align-items: flex-end; padding-bottom: 64px; opacity: 0; }
+.hud-pill { display: flex; gap: 14px; padding: 14px; border-radius: 26px; background: rgba(18,19,22,0.78); backdrop-filter: blur(12px); }
+.key { width: 92px; height: 92px; border-radius: 18px; background: linear-gradient(#fdfcf8, #e9e6de); color: #2a2925; display: grid; place-items: center; font: 500 46px var(--font-ui); box-shadow: 0 7px 0 #b4b0a6; }
+.key svg { width: 44px; height: 44px; }
+.caption { display: flex; align-items: flex-start; justify-content: center; padding-top: 50px; }
+.caption span { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; color: #fff; background: rgba(12,13,16,0.84); padding: 14px 32px; border-radius: 18px; opacity: 0; backdrop-filter: blur(10px); display: inline-flex; align-items: center; gap: 12px; }
+.caption em { font-style: normal; color: var(--lamp); display: inline-flex; align-items: center; }
+.caption code { font-size: 0.85em; color: var(--lamp); }
+.compare { display: flex; flex-direction: column; justify-content: center; padding-left: 240px; gap: 22px; }
+.compare .line { position: relative; align-self: flex-start; font-size: 78px; font-weight: 600; letter-spacing: -0.035em; color: #8f8d86; opacity: 0; }
+.compare .strike { position: absolute; left: -8px; right: -8px; top: 54%; height: 7px; border-radius: 4px; background: #e25d4f; transform: scaleX(0); transform-origin: 0 50%; }
+.compare .final { font-size: 120px; font-weight: 600; letter-spacing: -0.045em; color: #fff; opacity: 0; margin-top: 30px; display: flex; align-items: center; gap: 28px; }
+.compare .final em { font-style: normal; color: var(--lamp); display: inline-flex; align-items: center; }
+.features { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 56px; }
+.features h4 { margin: 0; font-size: 72px; font-weight: 600; letter-spacing: -0.04em; color: #fff; opacity: 0; }
+.tiles { display: flex; gap: 36px; }
+.tile { width: 470px; height: 440px; border-radius: 28px; background: #18191d; border: 1px solid #2b2c31; padding: 34px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; opacity: 0; }
+.tile b { font-size: 34px; letter-spacing: -0.02em; color: #fff; font-weight: 600; }
+.tile p { margin: 0; font-size: 22px; line-height: 1.45; color: #a9a7a0; }
+.art { height: 170px; border-radius: 16px; background: #222328; position: relative; overflow: hidden; flex: none; }
+.art .ln { position: absolute; height: 10px; border-radius: 5px; background: #3a3b41; }
+.art .ln.hot { background: var(--lamp); }
+.art .pane { position: absolute; border-radius: 10px; border: 2px solid #3a3b41; }
+.art .pane.hot { border-color: var(--lamp); }
+.art .big { position: absolute; inset: 0; display: grid; place-items: center; font: 600 30px var(--font-mono); color: #8f8d86; }
+.endcard { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 26px; background: #0c0d10; opacity: 0; }
+.wordmark { font-size: 170px; font-weight: 600; letter-spacing: -0.06em; color: #fff; }
+.tagline { font-size: 46px; color: #b9b7b0; letter-spacing: -0.02em; display: flex; align-items: center; gap: 20px; }
+.tagline kbd { font-size: 38px; padding: 4px 16px; border-radius: 12px; border-bottom-width: 4px; background: #1c1d21; border-color: #3a3b40; }
+.fine { font: 500 20px var(--font-mono); color: #66655f; letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* ---------- Notes below the film ---------- */
+section { display: flex; flex-direction: column; gap: 18px; }
+h2.sec { font-size: 28px; margin: 0; letter-spacing: -0.02em; font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.card { background: var(--page-raised); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; min-width: 0; }
+.card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+.card ul { margin: 0; padding-left: 18px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.card li strong { color: var(--text); font-weight: 600; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 15px; }
+th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
+tr:last-child td { border-bottom: 0; }
+td.pick { color: var(--lamp); font-weight: 600; white-space: nowrap; }
+.prompt-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+pre.prompt { margin: 0; background: #0b0c0e; border: 1px solid var(--line); border-radius: 14px; padding: 22px; overflow-x: auto; font: 13.5px/1.6 var(--font-mono); color: #d9d7d0; white-space: pre-wrap; word-break: break-word; max-height: 640px; overflow-y: auto; }
+.why { color: var(--muted); margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 80ch; }
+.why strong { color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .input .caret { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">Concept film · 52 seconds</span>
+    <h1>Margin</h1>
+    <p class="lede">A chat assistant that knows what you were reading. Type your question as usual and press <kbd><i class="cmd"></i>I</kbd> instead of Enter. The context is whatever you scrolled last: an earlier answer in the same chat, a side chat, or a code diff. Nothing is attached, and nothing on screen changes.</p>
+  </header>
+
+  <div class="player">
+    <div class="viewport" id="viewport">
+      <div class="stage" id="stage">
+        <div class="camera" id="camera">
+          <div class="desktop" id="desktop">
+            <div class="window">
+              <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+              <div class="body">
+                <div class="sidebar">
+                  <div class="side-item">+ New chat</div>
+                  <div class="side-label">Today</div>
+                  <div class="side-item on">Fine-tuning plan, 1B model</div>
+                  <div class="side-item">Notes on attention</div>
+                  <div class="side-label">Last week</div>
+                  <div class="side-item">Sizing GPU jobs</div>
+                  <div class="side-item">Reading list for December</div>
+                </div>
+                <div class="area">
+                  <div class="main-col" id="mainCol">
+                    <div class="view" id="mainView">
+                      <div class="thread" id="mainThread">
+                        <div class="u">I want to fine-tune a small model on my lab's papers. where do I start?</div>
+                        <div class="a">
+                          <p>Start by deciding what the model should do better after training: answer questions about the papers, write in their style, or summarize them. The goal sets the data format.</p>
+                          <p>Then pick a base model small enough to iterate quickly. A 1B model trains in days on a few GPUs, which leaves room for several attempts.</p>
+                          <p>Before any training, write 30 to 50 test questions with good answers. You will use them to check every run, so write them first and do not change them afterwards.</p>
+                          <p>Finally, run the base model on those questions. Its score is the baseline that fine-tuning has to beat.</p>
+                        </div>
+                        <div class="u">what's a reasonable dataset size for fine-tuning a 1B model?</div>
+                        <div class="a">
+                          <p>It depends on how far the task is from the base model's training data. For a new domain or style, a few hundred million tokens is a common starting point.</p>
+                          <p>More data helps less than cleaner data. A smaller set with duplicates and boilerplate removed often beats a larger raw one.</p>
+                          <p>Hold out a slice for validation before you look at any results, so that the numbers you report are not tuned to it.</p>
+                        </div>
+                        <div class="u">how should I clean scraped text?</div>
+                        <div class="a">
+                          <p>Start with exact deduplication, then near-duplicate removal with MinHash. Scraped sets often contain the same page many times under different URLs.</p>
+                          <p>Then drop navigation menus, cookie banners and very short pages. A simple rule such as "at least 200 words and at least 70% letters" removes most of them.</p>
+                          <p>Finally, read 50 random samples by hand. It is the fastest way to find a problem that the rules missed.</p>
+                        </div>
+                        <div class="u">Plan a fine-tuning run for a 1B model on my dataset of 1.2M sequences.</div>
+                        <div class="a" id="a0">
+                          <p>Here is a plan you can run on 4 GPUs. Each step lists the setting and the reason for it.</p>
+                          <h4>1. Clean and split the data</h4>
+                          <p>Remove exact duplicates, then hold out 2% of the sequences for validation. Split by document, not by sequence, so that no document appears on both sides.</p>
+                          <h4>2. Tokenize and pack</h4>
+                          <p>Tokenize with the base model's tokenizer and pack sequences to 2,048 tokens. Packing avoids padding, which would otherwise waste about a third of each batch.</p>
+                          <div id="s3">
+                            <h4>3. Learning-rate schedule</h4>
+                            <p>Warm up linearly from 0 to 2 × 10⁻⁴ over the first 2% of steps, which is 400 of 20,000. Then decay along a cosine curve to 10% of the peak.</p>
+                          </div>
+                          <h4>4. Batch size</h4>
+                          <p>Use an effective batch of 512 sequences: 8 per GPU, 16 accumulation steps and 4 GPUs.</p>
+                          <h4>5. Evaluate</h4>
+                          <p>Evaluate on the held-out split every 500 steps, and keep the checkpoint with the lowest validation loss.</p>
+                          <h4>6. Log and checkpoint</h4>
+                          <p>Log the training loss every 10 steps and the gradient norm every 50. Save a checkpoint at every evaluation, and keep only the best three.</p>
+                          <h4>What to watch in the first hour</h4>
+                          <p>The training loss should fall steadily once warmup ends. A gradient norm that keeps rising is the earliest sign that the peak rate is too high.</p>
+                        </div>
+                        <div class="u">which GPUs do I need for this?</div>
+                        <div class="a">
+                          <p>Four 80 GB A100s are enough. In bf16 the weights take about 2 GB, and the optimizer's states add about 12 GB per copy of the model.</p>
+                          <p>Most of the remaining memory goes to activations. A batch of 8 sequences per GPU keeps the peak under 60 GB.</p>
+                        </div>
+                        <div class="u">how long will it take?</div>
+                        <div class="a">
+                          <p>The run processes 20,000 × 512 × 2,048 ≈ 21B tokens. At about 25,000 tokens per second per GPU, four GPUs handle 100,000 tokens per second.</p>
+                          <p>That gives about 58 hours, plus roughly 40 minutes for evaluation.</p>
+                        </div>
+                        <div class="u">should I use LoRA instead?</div>
+                        <div class="a" id="aLast">
+                          <p>Only if memory or time is tight. LoRA trains far fewer parameters and would fit on one GPU.</p>
+                          <p>On a dataset this large, full fine-tuning usually reaches a lower validation loss, so I would keep the plan as it is.</p>
+                        </div>
+                        <div class="u later" id="q1">why warm up at all?</div>
+                        <div class="a later" id="a1"><p data-stream="a1"></p></div>
+                        <div class="u later" id="q2">does this look right?</div>
+                        <div class="a later" id="a2"><p data-stream="a2"></p></div>
+                      </div>
+                      <div class="fade"></div>
+                    </div>
+                    <div class="composer" id="composer">
+                      <span class="plus">+</span>
+                      <span class="input is-empty" id="mainInput"><span class="txt"></span><span class="caret"></span></span>
+                      <span class="send" id="mainSend">↑</span>
+                    </div>
+                  </div>
+                  <div class="side" id="side">
+                    <div class="diff-pane">
+                      <div class="pane-head">PR #128 · Add linear warmup <span class="stat">3 files <b>+5</b> <i>−2</i></span></div>
+                      <div class="view" id="diffView">
+                        <div class="diff" id="diff">
+                          <div class="file">data.py</div>
+                          <div class="dl"><span class="n">18</span><span class="s"> </span>def load_split(path, holdout=0.02):</div>
+                          <div class="dl"><span class="n">19</span><span class="s"> </span>    rows = read_jsonl(path)</div>
+                          <div class="dl del"><span class="n"></span><span class="s">-</span>    return split_by_sequence(rows, holdout)</div>
+                          <div class="dl add"><span class="n">20</span><span class="s">+</span>    rows = dedupe(rows)</div>
+                          <div class="dl add"><span class="n">21</span><span class="s">+</span>    return split_by_document(rows, holdout)</div>
+                          <div class="file">config.py</div>
+                          <div class="dl"><span class="n">11</span><span class="s"> </span>total_steps = 20_000</div>
+                          <div class="dl add"><span class="n">12</span><span class="s">+</span>warmup_steps = int(0.02 * total_steps)  # 400</div>
+                          <div class="dl"><span class="n">13</span><span class="s"> </span>peak_lr = 2e-4</div>
+                          <div class="file">train.py</div>
+                          <div class="dl"><span class="n">36</span><span class="s"> </span>def get_lr(step, warmup_steps, total_steps, peak):</div>
+                          <div class="dl"><span class="n">37</span><span class="s"> </span>    if step &lt; warmup_steps:</div>
+                          <div class="dl del"><span class="n"></span><span class="s">-</span>        return peak</div>
+                          <div class="dl add"><span class="n">38</span><span class="s">+</span>        # ramp linearly from 0 to peak</div>
+                          <div class="dl add" id="line39"><span class="n">39</span><span class="s">+</span>        return peak * (step // warmup_steps)</div>
+                          <div class="dl"><span class="n">40</span><span class="s"> </span>    progress = (step - warmup_steps) / (total_steps - warmup_steps)</div>
+                          <div class="dl"><span class="n">41</span><span class="s"> </span>    cosine = 0.5 * (1 + math.cos(math.pi * progress))</div>
+                          <div class="dl"><span class="n">42</span><span class="s"> </span>    return peak * (0.1 + 0.9 * cosine)</div>
+                          <div class="dl"><span class="n">43</span><span class="s"> </span></div>
+                          <div class="dl"><span class="n">44</span><span class="s"> </span>def train(model, data, cfg):</div>
+                          <div class="dl"><span class="n">45</span><span class="s"> </span>    for step, batch in enumerate(data):</div>
+                          <div class="dl"><span class="n">46</span><span class="s"> </span>        lr = get_lr(step, cfg.warmup_steps, ...)</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="chat-pane">
+                      <div class="pane-head">Side chat <span>batch size</span></div>
+                      <div class="view" id="sideView">
+                        <div class="thread" id="sideThread">
+                          <div class="u">is a bigger batch always better?</div>
+                          <div class="a" id="sa0"><p>No. Past a certain size each extra sequence adds little to the gradient, and you take fewer optimizer steps per epoch.</p></div>
+                          <div class="u later" id="sq1">what does gradient accumulation do?</div>
+                          <div class="a later" id="sa1"><p data-stream="sa1"></p></div>
+                        </div>
+                      </div>
+                      <div class="composer">
+                        <span class="plus">+</span>
+                        <span class="input is-empty" id="sideInput"><span class="txt"></span><span class="caret"></span></span>
+                        <span class="send" id="sideSend">↑</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <svg class="pointer" id="pointer" viewBox="0 0 24 24"><path d="M4 2l15 11-6.5 1.2L16 21l-3 1.4-3.4-6.8L4 19z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+
+        <div class="layer dim" id="dim"></div>
+        <div class="layer hud" id="hud"><div class="hud-pill"><div class="key" id="kCmd"><i class="cmd"></i></div><div class="key" id="kI">I</div></div></div>
+        <div class="layer caption"><span id="cap1">Four prompts back, <em>mid-answer.</em></span></div>
+        <div class="layer caption"><span id="cap2"><em><i class="cmd"></i>I</em> sends it with what you were reading.</span></div>
+        <div class="layer caption"><span id="cap3">Code on top. A side chat below.</span></div>
+        <div class="layer caption"><span id="cap4">Then you scroll <em>the diff.</em></span></div>
+        <div class="layer caption"><span id="cap5">A vague question, a precise answer.</span></div>
+        <div class="layer caption"><span id="cap6"><code>get_lr()</code>, line 39: the line <em>you scrolled to.</em></span></div>
+        <div class="layer compare" id="compare">
+          <div class="line" id="c1">Highlight, then Reply.<span class="strike"></span></div>
+          <div class="line" id="c2">Paste the code in.<span class="strike"></span></div>
+          <div class="line" id="c3">"In train.py, line 39…"<span class="strike"></span></div>
+          <div class="final" id="cFinal">Just <em><i class="cmd"></i>I</em></div>
+        </div>
+        <div class="layer features" id="features">
+          <h4 id="fTitle">Context, without asking for it.</h4>
+          <div class="tiles">
+            <div class="tile"><div class="art"><span class="ln" style="left:28px;right:28px;top:26px"></span><span class="ln" style="left:28px;right:90px;top:48px"></span><span class="ln hot" style="left:28px;right:28px;top:80px"></span><span class="ln hot" style="left:28px;right:140px;top:102px"></span><span class="ln" style="left:28px;right:60px;top:134px"></span></div><b>Reads what you see</b><p>The text on screen, weighted toward the middle. Scroll up in a long answer and ask.</p></div>
+            <div class="tile"><div class="art"><span class="pane" style="left:18px;top:18px;bottom:18px;width:220px"></span><span class="pane hot" style="right:18px;top:18px;height:62px;width:160px"></span><span class="pane" style="right:18px;bottom:18px;height:62px;width:160px"></span></div><b>Knows which pane</b><p>Main chat, side chat or code diff: the one you scrolled last is the one you mean.</p></div>
+            <div class="tile"><div class="art"><span class="big">no chip · no upload</span></div><b>Nothing to attach</b><p>No screenshot, no highlight, no badge. The answer just knows.</p></div>
+          </div>
+        </div>
+        <div class="layer endcard" id="endcard">
+          <div class="wordmark">Margin</div>
+          <div class="tagline">Ask about what you're reading. <kbd><i class="cmd"></i>I</kbd></div>
+          <div class="fine">Concept demo</div>
+        </div>
+        <div class="layer titles" id="titles">
+          <div id="t1">You're reading.</div>
+          <div id="t2" class="soft">Then a question shows up.</div>
+        </div>
+        <div class="layer black" id="black"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="play" type="button">Pause</button>
+      <button class="btn" id="replay" type="button">Replay</button>
+      <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Film position">
+      <span class="clock" id="clock">0:00 / 0:52</span>
+    </div>
+  </div>
+
+  <section>
+    <h2 class="sec">Brainstorm</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>The problem</h3>
+        <ul>
+          <li>Questions come up while you read, and they point at what is on screen: "why this step?", "does this look right?".</li>
+          <li>The thing you mean may be above you in the same chat, in a side chat, or in a code diff next to it.</li>
+          <li>Today you highlight and reply, paste the code, or write "in train.py, line 39…". Each one breaks your reading.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>One rule</h3>
+        <ul>
+          <li>The context is <strong>the pane you scrolled last</strong>, read as the text visible in it and weighted toward the middle.</li>
+          <li>With one chat open, that is the earlier answer you scrolled back into.</li>
+          <li>With a diff and a side chat open, scrolling the diff makes the diff the context, even if you then type in the main chat.</li>
+          <li>The answer appears where you typed.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>How <kbd><i class="cmd"></i>I</kbd> behaves</h3>
+        <ul>
+          <li>It sends the message, in place of Enter. Enter still sends without screen context.</li>
+          <li>Nothing appears in the interface: no logo, chip, scan or attachment. It should feel as if chat always worked this way.</li>
+          <li>The answer uses the exact names it read (<code>get_lr()</code>, line 39), which is the only confirmation, and makes a wrong guess obvious at once.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Edge cases</h3>
+        <ul>
+          <li>No scroll since your last message: use the pane that has keyboard focus.</li>
+          <li>A wrong guess: reply "no, the diff" and it answers again from that pane.</li>
+          <li>Code: read the visible lines with their file names and line numbers, so answers can cite them.</li>
+          <li>Privacy: nothing on screen is read until you press <kbd><i class="cmd"></i>I</kbd>, and only the chosen pane is read.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Option</th><th>How it feels</th><th>Risk</th><th>Choice</th></tr></thead>
+        <tbody>
+          <tr><td><kbd><i class="cmd"></i>I</kbd> sends with screen context</td><td>One key, no extra step, nothing to look at.</td><td>A wrong pane is only visible in the answer.</td><td class="pick">Ship this</td></tr>
+          <tr><td><kbd><i class="cmd"></i>I</kbd>, then Enter</td><td>Two steps; needs some sign that the shortcut was pressed.</td><td>Adds the on-screen indicator we want to avoid.</td><td>Skip</td></tr>
+          <tr><td>Always read the screen</td><td>No shortcut at all.</td><td>Reads without a clear yes; worse for questions about something else.</td><td>Skip</td></tr>
+          <tr><td>Pane under the pointer</td><td>Works without scrolling.</td><td>The pointer often rests where you are not reading.</td><td>Fallback only</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="prompt-head">
+      <h2 class="sec">The prompt behind this film</h2>
+      <button class="btn" id="copy" type="button">Copy prompt</button>
+    </div>
+    <pre class="prompt" id="promptText">ROLE
+You are a motion designer and front-end engineer. Build a 50-second product launch film
+as ONE self-contained HTML file that plays in a browser. It must feel like a real launch
+video: one smooth virtual camera that zooms in and out of a desktop app, kinetic type,
+and no web-page chrome inside the film.
+
+PRODUCT
+"Margin" is a chat assistant with a generic ChatGPT-like layout (sidebar, centered thread,
+rounded composer). The product UI shows NO logo, avatar or name on answers. You type a
+question normally and press Cmd+I instead of Enter. The context is the pane you scrolled
+last, read as its visible text: an earlier answer in the same chat, a side chat, or a
+code diff. The answer appears where you typed. Cmd+I leaves NO trace in the UI: no chip,
+scan line, screenshot or attachment. The only confirmation is that the answer uses the
+exact names it read (function name, file, line number).
+
+STAGE AND CAMERA
+- Author on a fixed 1920x1080 stage scaled to the container width.
+- The desktop scene sits inside one ".camera" element; every zoom is a transform of it:
+  shot(x, y, s) = translate(960 - x*s, 540 - y*s) scale(s), transform-origin 0 0.
+- Scrolling is a translateY of each thread. Lay out every message up front (future ones
+  at opacity 0) so scroll targets can be measured once and never shift.
+- Film-only overlays (titles, captions, a small keystroke display, end card) live outside
+  the camera. Draw the Command symbol as inline SVG; do not rely on a font glyph.
+- Eases: power3.inOut for camera moves, expo.out for reveals. Zoom in for every typed
+  question and every key moment; zoom out to full frame between scenes.
+
+STORYBOARD (seconds)
+0-3    Black. Kinetic type: "You're reading." then "Then a question shows up."
+3-8    Open at 2x on the top of a long conversation. The thread scrolls DOWN fast
+       (expo.inOut, motion blur) past several exchanges and lands on step 3 of a
+       fine-tuning plan that is four prompts back from the latest message. The camera
+       pulls back. Caption: "Four prompts back, mid-answer."
+8-19   Push into the composer; type "why warm up at all?"; keystroke display shows Cmd I.
+       The thread jumps to the bottom with the same blur, and the answer begins
+       "You were reading step 3 of the fine-tuning plan, four messages up ...".
+19-21  A right panel slides in, split in two: a code diff on top (PR #128: data.py,
+       config.py, train.py) and a side chat below. Caption: "Code on top. A side chat below."
+21-27  Zoom to the side chat. Type "what does gradient accumulation do?", press Enter
+       (normal send). The side chat answers.
+27-29  Pointer moves up; the diff scrolls from data.py down to get_lr() in train.py.
+       Caption: "Then you scroll the diff."
+29-36  Back in the MAIN composer, type a vague question: "does this look right?", Cmd I.
+       The main chat answers: "Not quite. In get_lr() on line 39, step // warmup_steps
+       is integer division ... the learning rate stays at 0 for all 400 warmup steps.
+       Use peak * step / warmup_steps instead."
+36-40  Zoom 2.3x on "get_lr() on line 39" in the answer, then pan to line 39 in the diff.
+       Captions: "A vague question, a precise answer." / "get_lr(), line 39: the line
+       you scrolled to."
+40-43  "Highlight, then Reply." / "Paste the code in." / "In train.py, line 39..." each
+       struck through, then "Just Cmd I".
+43-47  Three tiles: Reads what you see / Knows which pane / Nothing to attach.
+47-52  End card: "Margin", "Ask about what you're reading. Cmd I", "Concept demo".
+
+CONTENT
+- Real, correct text and code; never lorem ipsum. The bug must be real and easy to see:
+  integer division (//) makes the warmup rate 0 for every step below warmup_steps.
+
+ENGINEERING
+- GSAP 3.12.5 from cdnjs; one paused master timeline built after document.fonts.ready.
+- Typed and streamed text is a pure function of timeline time (stream by revealing
+  pre-laid-out words; backtick spans render as inline code), so scrubbing is always right.
+- Controls: play/pause, replay, scrub bar, clock; Space toggles play.
+- prefers-reduced-motion: no autoplay; show a still at 37 s.
+
+QUALITY BAR
+- Every appearance has an entry tween and every exit an exit tween.
+- One moving focus at a time; hold each caption at least 1.2 s.
+- Before handing back, check frames at 6, 15, 25, 28, 35 and 39 s for overlap and clipping.</pre>
+    <ul class="why">
+      <li><strong>"No logo, no trace" is stated as a rule</strong>, with the one allowed confirmation named, so the model does not add a badge or chip out of habit.</li>
+      <li><strong>A real, visible bug</strong> (<code>//</code> on line 39) lets a vague question get a precise answer that any viewer can check.</li>
+      <li><strong>The camera zooms from the answer to the diff line</strong>, so the film shows the link without adding any graphic to the product.</li>
+      <li><strong>Pre-laid-out messages and word reveals</strong> keep scroll targets fixed and make scrubbing correct.</li>
+      <li>To export an MP4, port the same storyboard to Remotion, or record this page at 1920×1080 with a screen recorder.</li>
+    </ul>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script>
+(() => {
+  const STAGE_WIDTH = 1920;
+  const STAGE_HEIGHT = 1080;
+  const STILL_FRAME_SECONDS = 37.0; // zoomed on "get_lr() on line 39": the frame that explains the idea
+  const MAIN_BOTTOM_CLEAR_PX = 150; // the composer and its fade cover this much of the main view
+  const SIDE_SHIFT_PX = -290; // main column moves from centred to the left edge of the area
+  const DIFF_HEAD_PX = 48;
+  const DIFF_ROW_PX = 26;
+  const COMMAND_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="Command"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>';
+  // Answers; text between backticks renders as inline code.
+  const ANSWERS = {
+    a1: "You were reading step 3 of the fine-tuning plan, four messages up. Warmup is there because Adam's estimate of each gradient's variance is noisy for the first few hundred steps, so early updates can be far too large. Ramping the rate up from 0 over 400 steps keeps those updates small until the estimate settles.",
+    sa1: "It adds up gradients from several small batches before one optimizer step. With 8 per GPU, 16 steps and 4 GPUs, each step sees 8 × 16 × 4 = 512 sequences.",
+    a2: "Not quite. In `get_lr()` on line 39, `step // warmup_steps` is integer division, so it is 0 for every step below `warmup_steps`. The learning rate stays at 0 for all 400 warmup steps. Use `peak * step / warmup_steps` instead.",
+  };
+  const STREAM_WINDOWS = { a1: [13.6, 17.2], sa1: [24.7, 26.6], a2: [32.5, 35.6] };
+  // Composer text per input: typed during [typeStart, typeEnd], cleared when sent.
+  const COMPOSER_TRACKS = {
+    mainInput: [
+      { text: "why warm up at all?", typeStart: 9.4, typeEnd: 11.2, clearAt: 12.1 },
+      { text: "does this look right?", typeStart: 30.0, typeEnd: 31.1, clearAt: 31.9 },
+    ],
+    sideInput: [
+      { text: "what does gradient accumulation do?", typeStart: 22.1, typeEnd: 23.6, clearAt: 23.9 },
+    ],
+  };
+
+  const $ = (id) => document.getElementById(id);
+  document.querySelectorAll(".cmd").forEach((element) => { element.innerHTML = COMMAND_SVG; });
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Splits text into word spans; segments inside backticks get the inline-code class.
+  function wordSpans(text) {
+    return text.split("`").map((segment, index) => segment.split(" ")
+      .filter((word) => word.length > 0)
+      .map((word) => `<span class="w${index % 2 === 1 ? " c" : ""}">${escapeHtml(word)}</span>`)
+      .join(" ")).join(" ");
+  }
+
+  const streams = Object.entries(ANSWERS).map(([key, text]) => {
+    const element = document.querySelector(`[data-stream="${key}"]`);
+    element.innerHTML = wordSpans(text);
+    return { words: Array.from(element.children), start: STREAM_WINDOWS[key][0], end: STREAM_WINDOWS[key][1], shown: -1 };
+  });
+  const inputs = Object.entries(COMPOSER_TRACKS).map(([id, tracks]) => ({ element: $(id), text: $(id).querySelector(".txt"), tracks }));
+
+  const viewport = $("viewport"), stage = $("stage"), camera = $("camera");
+  const playButton = $("play"), scrub = $("scrub"), clock = $("clock");
+
+  function fitStage() {
+    stage.style.transform = `scale(${viewport.clientWidth / STAGE_WIDTH})`;
+  }
+  new ResizeObserver(fitStage).observe(viewport);
+  fitStage();
+
+  // Camera framing: puts stage point (x, y) at the frame center at zoom s.
+  function shot(x, y, s) {
+    return { x: STAGE_WIDTH / 2 - x * s, y: STAGE_HEIGHT / 2 - y * s, scale: s };
+  }
+
+  function fraction(start, end, time) {
+    return Math.min(1, Math.max(0, (time - start) / (end - start)));
+  }
+
+  function renderText(time) {
+    for (const input of inputs) {
+      let text = "";
+      for (const track of input.tracks) {
+        if (time >= track.typeStart && time < track.clearAt) {
+          text = track.text.slice(0, Math.round(track.text.length * fraction(track.typeStart, track.typeEnd, time)));
+        }
+      }
+      input.text.textContent = text;
+      input.element.classList.toggle("is-empty", text.length === 0);
+    }
+    for (const stream of streams) {
+      const count = Math.round(stream.words.length * fraction(stream.start, stream.end, time));
+      if (count === stream.shown) continue;
+      stream.words.forEach((word, index) => word.classList.toggle("on", index < count));
+      stream.shown = count;
+    }
+  }
+
+  function formatClock(seconds) {
+    const whole = Math.floor(seconds);
+    return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+  }
+
+  function build() {
+    const mainVisible = $("mainView").clientHeight - MAIN_BOTTOM_CLEAR_PX;
+    const sideVisible = $("sideView").clientHeight;
+    const diffVisible = $("diffView").clientHeight;
+    const bottomAt = (element, visible) => -Math.max(0, element.offsetTop + element.offsetHeight - visible);
+    const centerAt = (element, visible) => -Math.max(0, element.offsetTop + element.offsetHeight / 2 - visible / 2);
+    const scroll = {
+      mainStep3: centerAt($("s3"), mainVisible),
+      mainAfterOne: bottomAt($("a1"), mainVisible),
+      mainAfterTwo: bottomAt($("a2"), mainVisible),
+      sideStart: bottomAt($("sa0"), sideVisible),
+      sideAfterOne: bottomAt($("sa1"), sideVisible),
+      diffLine39: centerAt($("line39"), diffVisible),
+    };
+    // Stage coordinates of the layout, from the CSS: window at (160, 110), titlebar 44,
+    // sidebar 240, main column 720 wide at left 320, side panel 600 wide with the diff
+    // pane 430 high above the side chat.
+    const AREA_X = 160 + 240, AREA_Y = 110 + 44, AREA_HEIGHT = 816;
+    const mainCenterX = AREA_X + 320 + 360;
+    const mainOpenX = mainCenterX + SIDE_SHIFT_PX;
+    const composerY = AREA_Y + AREA_HEIGHT - 24 - 32;
+    const sideX = AREA_X + 1360 - 600;
+    const sideCenterX = sideX + 300;
+    const sideComposerY = AREA_Y + AREA_HEIGHT - 14 - 26;
+    const diffCenterY = AREA_Y + 215;
+    const line39Y = AREA_Y + DIFF_HEAD_PX + $("line39").offsetTop + scroll.diffLine39 + DIFF_ROW_PX / 2;
+    const answerTwoY = AREA_Y + $("a2").offsetTop + scroll.mainAfterTwo + 20;
+    const blurIn = { opacity: 0, y: 40, filter: "blur(14px)" };
+    const sharp = { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.9, ease: "expo.out" };
+    const main = $("mainThread"), sideThread = $("sideThread"), diff = $("diff"), pointer = $("pointer");
+
+    const tl = gsap.timeline({ paused: true, onUpdate: sync, onComplete: () => { playButton.textContent = "Play"; } });
+    gsap.set(camera, { transformOrigin: "0 0", ...shot(mainCenterX, 420, 2.0) });
+    gsap.set(main, { y: 0 });
+    gsap.set(sideThread, { y: scroll.sideStart });
+    gsap.set($("side"), { x: 640 });
+    gsap.set(pointer, { x: mainCenterX + 160, y: 600 });
+
+    // 0-3 s: opening titles over black.
+    tl.fromTo($("t1"), blurIn, sharp, 0.2)
+      .fromTo($("t2"), blurIn, sharp, 1.3)
+      .to([$("t1"), $("t2")], { opacity: 0, y: -30, filter: "blur(10px)", duration: 0.6, ease: "power2.in" }, 2.7)
+      .to($("black"), { opacity: 0, duration: 0.9, ease: "power1.out" }, 3.0);
+
+    // 3-8 s: a fast scroll through a long conversation lands on step 3, four prompts back.
+    tl.to(pointer, { opacity: 1, duration: 0.3 }, 3.2)
+      .to(main, { y: scroll.mainStep3, duration: 2.6, ease: "expo.inOut" }, 3.5)
+      .to(main, { filter: "blur(5px)", duration: 0.7, ease: "power2.in" }, 3.8)
+      .to(main, { filter: "blur(0px)", duration: 0.6, ease: "power2.out" }, 5.1)
+      .to(pointer, { y: 560, duration: 2.6, ease: "sine.inOut" }, 3.5)
+      .to(camera, { ...shot(mainCenterX, 470, 1.5), duration: 1.4, ease: "power2.out" }, 3.6)
+      .to(camera, { ...shot(960, 540, 1), duration: 1.6, ease: "power3.inOut" }, 5.6);
+    addCaption(tl, $("cap1"), 6.8, 8.4);
+
+    // 8-19 s: ask, press Cmd+I, the answer names step 3.
+    tl.to(camera, { ...shot(mainCenterX, composerY - 30, 2.0), duration: 1.1, ease: "power3.inOut" }, 8.5);
+    addKeystroke(tl, 11.5, $("mainSend"));
+    tl.to(camera, { ...shot(mainCenterX, 640, 1.3), duration: 1.0, ease: "power3.inOut" }, 12.1);
+    addExchange(tl, { thread: main, question: $("q1"), answer: $("a1"), scrollTo: scroll.mainAfterOne, at: 12.15, scrollSeconds: 1.3 });
+    addCaption(tl, $("cap2"), 17.2, 18.8);
+
+    // 19-21 s: the right panel slides in: diff on top, side chat below.
+    tl.to(camera, { ...shot(960, 540, 1), duration: 0.9, ease: "power3.inOut" }, 18.9)
+      .to($("mainCol"), { x: SIDE_SHIFT_PX, duration: 1.0, ease: "power3.inOut" }, 19.3)
+      .to($("side"), { x: 0, duration: 1.0, ease: "power3.inOut" }, 19.3)
+      .to(pointer, { x: mainOpenX + 140, duration: 1.0, ease: "power3.inOut" }, 19.3);
+    addCaption(tl, $("cap3"), 19.9, 21.2);
+
+    // 21-27 s: chat in the side chat with a normal Enter.
+    tl.to(pointer, { x: sideCenterX + 40, y: sideComposerY + 6, duration: 0.7, ease: "power2.inOut" }, 21.2)
+      .to(camera, { ...shot(sideCenterX, sideComposerY - 120, 1.75), duration: 1.0, ease: "power3.inOut" }, 21.3)
+      .fromTo($("sideSend"), { scale: 1 }, { scale: 0.85, duration: 0.1, yoyo: true, repeat: 1 }, 23.8);
+    addExchange(tl, { thread: sideThread, question: $("sq1"), answer: $("sa1"), scrollTo: scroll.sideAfterOne, at: 23.95 });
+
+    // 27-29 s: scroll the diff down to get_lr().
+    tl.to(camera, { ...shot(sideCenterX, diffCenterY, 1.55), duration: 0.9, ease: "power3.inOut" }, 26.8)
+      .to(pointer, { x: sideCenterX + 160, y: diffCenterY - 40, duration: 0.6, ease: "power2.inOut" }, 26.8)
+      .to(diff, { y: scroll.diffLine39, duration: 1.6, ease: "power2.inOut" }, 27.5)
+      .to(pointer, { y: diffCenterY - 10, duration: 1.6, ease: "sine.inOut" }, 27.5);
+    addCaption(tl, $("cap4"), 27.5, 29.0);
+
+    // 29-36 s: a vague question in the main chat; the answer cites the diff.
+    tl.to(camera, { ...shot(mainOpenX, composerY - 30, 1.9), duration: 1.0, ease: "power3.inOut" }, 29.2)
+      .to(pointer, { x: mainOpenX + 200, y: composerY + 4, duration: 0.7, ease: "power2.inOut" }, 29.3);
+    addKeystroke(tl, 31.3, $("mainSend"));
+    tl.to(camera, { ...shot(mainOpenX, 660, 1.3), duration: 1.0, ease: "power3.inOut" }, 31.9);
+    addExchange(tl, { thread: main, question: $("q2"), answer: $("a2"), scrollTo: scroll.mainAfterTwo, at: 31.95 });
+
+    // 36-40 s: zoom on the cited line in the answer, then pan to it in the diff.
+    tl.to(camera, { ...shot(AREA_X + 30 + 20 + 330, answerTwoY, 2.3), duration: 1.0, ease: "power3.inOut" }, 35.9);
+    addCaption(tl, $("cap5"), 36.2, 37.6);
+    tl.to(camera, { ...shot(sideX + 260, line39Y, 2.3), duration: 1.1, ease: "power3.inOut" }, 37.8);
+    addCaption(tl, $("cap6"), 38.3, 39.9);
+
+    // 40-43 s: the old ways, struck through.
+    tl.to($("dim"), { opacity: 0.86, duration: 0.5 }, 40.2);
+    ["c1", "c2", "c3"].forEach((id, index) => {
+      const at = 40.4 + index * 0.35;
+      tl.fromTo($(id), { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.5, ease: "expo.out" }, at)
+        .to($(id).querySelector(".strike"), { scaleX: 1, duration: 0.35, ease: "power2.inOut" }, at + 0.45);
+    });
+    tl.fromTo($("cFinal"), blurIn, sharp, 42.1)
+      .to($("compare"), { opacity: 0, duration: 0.5 }, 43.4);
+
+    // 43-47 s: feature tiles.
+    tl.to($("desktop"), { opacity: 0, duration: 0.3 }, 43.4)
+      .to($("dim"), { opacity: 0, duration: 0.3 }, 43.7)
+      .fromTo($("fTitle"), blurIn, sharp, 43.9)
+      .fromTo(document.querySelectorAll(".tile"), { opacity: 0, y: 60, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: "expo.out", stagger: 0.18 }, 44.3)
+      .to($("features"), { opacity: 0, y: -30, duration: 0.5, ease: "power2.in" }, 47.4);
+
+    // 47-52 s: end card.
+    tl.to($("endcard"), { opacity: 1, duration: 0.6 }, 47.7)
+      .fromTo(".wordmark", { opacity: 0, scale: 0.9, filter: "blur(16px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 1.0, ease: "expo.out" }, 47.9)
+      .fromTo(".tagline", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.7, ease: "expo.out" }, 48.6)
+      .fromTo(".fine", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 49.3)
+      .to({}, { duration: 2.2 }, 49.8);
+    return tl;
+  }
+
+  function addCaption(tl, element, start, end) {
+    tl.fromTo(element, { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.45, ease: "expo.out" }, start)
+      .to(element, { opacity: 0, y: -10, duration: 0.35, ease: "power2.in" }, end);
+  }
+
+  // Film-only keystroke display: Cmd goes down, then I, then both release.
+  function addKeystroke(tl, start, sendButton) {
+    const down = { y: 6, boxShadow: "0 1px 0 #b4b0a6", duration: 0.1 };
+    tl.fromTo($("hud"), { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.25, ease: "back.out(2)" }, start)
+      .to($("kCmd"), down, start + 0.3)
+      .to($("kI"), down, start + 0.42)
+      .fromTo(sendButton, { scale: 1 }, { scale: 0.85, duration: 0.1, yoyo: true, repeat: 1 }, start + 0.5)
+      .to([$("kCmd"), $("kI")], { y: 0, boxShadow: "0 7px 0 #b4b0a6", duration: 0.15 }, start + 0.7)
+      .to($("hud"), { opacity: 0, y: 10, duration: 0.3 }, start + 1.0);
+  }
+
+  // A sent question and its answer appearing at the end of a thread. A scroll longer
+  // than one second is a fast jump down the thread, drawn with motion blur.
+  function addExchange(tl, { thread, question, answer, scrollTo, at, scrollSeconds = 0.8 }) {
+    const isLongJump = scrollSeconds > 1;
+    tl.fromTo(question, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, at)
+      .to(thread, { y: scrollTo, duration: scrollSeconds, ease: isLongJump ? "expo.inOut" : "power2.inOut" }, at + 0.05)
+      .fromTo(answer, { opacity: 0 }, { opacity: 1, duration: 0.3 }, at + scrollSeconds - 0.2);
+    if (isLongJump) {
+      tl.to(thread, { filter: "blur(4px)", duration: scrollSeconds * 0.35, ease: "power2.in" }, at + 0.15)
+        .to(thread, { filter: "blur(0px)", duration: scrollSeconds * 0.35, ease: "power2.out" }, at + scrollSeconds * 0.6);
+    }
+  }
+
+  let timeline = null;
+  let scrubbing = false;
+
+  function sync() {
+    const time = timeline.time();
+    renderText(time);
+    if (!scrubbing) scrub.value = String(Math.round(timeline.progress() * 1000));
+    clock.textContent = `${formatClock(time)} / ${formatClock(timeline.duration())}`;
+  }
+
+  function togglePlay() {
+    if (timeline.progress() >= 1) timeline.restart();
+    else timeline.paused(!timeline.paused());
+    playButton.textContent = timeline.paused() ? "Play" : "Pause";
+  }
+
+  document.fonts.ready.then(() => {
+    timeline = build();
+    // Frame-exact seeking for offline rendering to video (used by render-film.mjs).
+    window.marginFilm = {
+      duration: () => timeline.duration(),
+      seek: (seconds) => { timeline.pause(); timeline.seek(seconds); sync(); },
+    };
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      timeline.seek(STILL_FRAME_SECONDS);
+      playButton.textContent = "Play";
+    } else {
+      timeline.play(0);
+    }
+    sync();
+    playButton.addEventListener("click", togglePlay);
+    $("replay").addEventListener("click", () => { timeline.restart(); playButton.textContent = "Pause"; });
+    scrub.addEventListener("input", () => {
+      scrubbing = true;
+      timeline.pause();
+      playButton.textContent = "Play";
+      timeline.progress(Number(scrub.value) / 1000);
+      scrubbing = false;
+    });
+    document.addEventListener("keydown", (event) => {
+      const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLButtonElement;
+      if (event.code === "Space" && !typing) { event.preventDefault(); togglePlay(); }
+    });
+  });
+
+  $("copy").addEventListener("click", () => {
+    navigator.clipboard.writeText($("promptText").textContent).then(
+      () => { $("copy").textContent = "Copied"; },
+      () => { const range = document.createRange(); range.selectNodeContents($("promptText")); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); $("copy").textContent = "Selected; press Cmd+C"; }
+    );
+  });
+})();
+</script>
