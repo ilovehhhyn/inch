@@ -8,7 +8,7 @@
 
 **Tech stack:** Electron, TypeScript, React, Vite (`electron-vite`), Vitest with Testing Library, Playwright for Electron end-to-end tests, `electron-builder` for the `.dmg`. Codex CLI 0.146.0 as an external, user-installed dependency. `@anthropic-ai/sdk` for Claude, and the `ant` CLI (optional, user-installed) for browser sign-in to a Claude Console account.
 
-**Build order:** Tasks 0 to 15 build the app with the OpenAI provider and ship it. Tasks 16 to 19 add the Claude provider; they need Tasks 5, 10 and 11 to be done, and Task 15's `.dmg` build is rerun after them.
+**Build order:** Tasks 0 to 15 build the app with the OpenAI provider and ship it. Tasks 16 to 19 add the Claude provider; they need Tasks 5, 10 and 11 to be done, and Task 15's `.dmg` build is rerun after them. Tasks 20 to 23 add attachments, the model and reasoning pickers, and voice; they need Task 19. Task 24 (live spoken conversation with Codex) is optional and comes last.
 
 **Spec:** the product rules are written out in the section "Product spec" below, taken from the concept film and the brainstorm on the Margin page. There is no separate spec file yet; Task 0 creates `docs/spec.md` from that section.
 
@@ -48,11 +48,24 @@ These were checked on 2026-11-21 against Anthropic's documentation and the bundl
 | A request can be declined with `stop_reason: "refusal"`; the server-side `fallbacks: "default"` parameter (beta `server-side-fallback-2026-07-01`) reruns it on another model in the same call. | Bundled reference, "Refusal Fallbacks". |
 | `ant` is not installed on this machine; `claude` (Claude Code) is. | `which ant claude`, 2026-11-21. |
 
+### Facts for attachments, reasoning and voice
+
+Checked on 2026-11-21 against Codex CLI 0.146.0 (`codex app-server generate-ts --experimental`) and the bundled Claude API reference.
+
+| Fact | Evidence |
+| --- | --- |
+| Codex turn input accepts `{ type: "localImage", path }` and `{ type: "image", url }`; there is no document or PDF input type. | `v2/UserInput.ts`. |
+| Each Codex model lists `inputModalities` (`"text"`, `"image"`, `"audio"`), `supportedReasoningEfforts` and `defaultReasoningEffort`. `turn/start` takes `effort` per turn; `ReasoningEffort` is a plain string. | `v2/Model.ts`, `v2/TurnStartParams.ts`, `ReasoningEffort.ts`. |
+| Claude accepts images and PDFs as content blocks (PDF limits: 32 MB per request, 600 pages). | Bundled reference, "Document & File Input". |
+| Claude effort is `low`, `medium`, `high`, `xhigh` or `max` in `output_config.effort`; `claude-opus-5-5` has no "thinking off". A mid-conversation effort change invalidates the prompt cache. | Bundled reference, thinking table and "Choosing an effort level". |
+| Codex has an experimental live voice API: `thread/realtime/start` (WebRTC or WebSocket transport, audio or text output, voice choice), `thread/realtime/appendAudio`, `thread/realtime/stop`, and notifications such as `thread/realtime/outputAudio/delta` and `thread/realtime/transcript/delta`. It appears only in the `--experimental` bindings. | `v2/ThreadRealtime*.ts`. |
+| The Claude Messages API takes no audio input and produces no audio. | Bundled reference (no audio content type is documented). |
+
 **Not yet measured for Claude:** time to the first text token with `claude-opus-5-5` at effort `low` and `medium`, with and without a 12,000-character context, and whether an `ant` OAuth token passed as `authToken` needs the `anthropic-beta: oauth-2025-04-20` header through the SDK. Task 16 measures both.
 
 ## Product spec
 
-1. Margin looks like a standard chat app: a sidebar of chats, a centred main thread, a rounded composer. It shows **no Margin logo, avatar or name** inside answers or the composer.
+1. Margin matches the Codex desktop app's layout and interaction: the sidebar, the centred thread, the composer and its controls, spacing, type sizes and keyboard behaviour, taken from reference screenshots (Task 6). It does not copy OpenAI's logos, icons, name or other brand assets. It shows **no Margin logo, avatar or name** inside answers or the composer.
 2. **Enter** sends the message without screen context. **⌘I** sends it with screen context. Nothing on screen changes when ⌘I is pressed: no chip, no scan effect, no attachment.
 3. The context is the text visible in **the pane the user scrolled last**. If the user has not scrolled any pane since their previous message, the context comes from the pane that has keyboard focus.
 4. Inside that pane, visible blocks are weighted by distance from the pane's vertical centre; the centre block is always included.
@@ -61,6 +74,10 @@ These were checked on 2026-11-21 against Anthropic's documentation and the bundl
 7. Diff context carries file names and new-file line numbers, so answers can cite `get_lr()` on line 39.
 8. Sign-in offers two providers. **OpenAI** goes through the Codex app-server: ChatGPT browser login, ChatGPT device code, or an OpenAI API key typed by the user. **Claude** goes through the Anthropic API: browser sign-in to a Claude Console account (through `ant auth login`), or an Anthropic API key typed by the user. Margin does not offer claude.ai (Pro, Max) login, because Anthropic does not allow it in third-party products without approval.
 8a. Each chat belongs to one provider, chosen when the chat is created. Side chats use the provider of the chat they were forked from. The ⌘I rules are the same for both providers.
+11. The composer has pickers for the provider (new chat only), the model, and the reasoning level. The reasoning choices are the ones the chosen model supports. The model and reasoning level can change between messages.
+12. Files can be attached with the "+" button, drag and drop, or paste: images (PNG, JPEG, GIF, WebP), PDFs, and text or code files. Attachments show as chips above the composer and in the sent message. Unlike ⌘I context, attachments are visible, because the user chose them.
+13. Voice: hold a key to talk; the speech is transcribed on the Mac into the composer and sent when the key is released. Answers can be read aloud. This works for both providers. A live spoken conversation (Task 24) is available for Codex chats only.
+14. Margin offers no plugins, skills, MCP servers, apps or artifacts, even though the Codex app-server supports some of them.
 9. Margin never runs commands or edits files on the user's behalf.
 10. Nothing on screen is read until ⌘I. Only the chosen pane is read.
 
@@ -285,6 +302,7 @@ This task writes no product code. It answers the two open questions and records 
 - Consumes: `reduceThread`, IPC `thread:*` channels.
 - Produces: `<ChatPane paneId threadId />`, `<Composer onSend(question: string, mode: "plain" | "withContext") busy />`. `ChatPane` exposes its scroll container element through `ref` for Task 9.
 
+- [ ] **Step 0: Write the visual reference.** Collect screenshots of the Codex desktop app (new chat, a long thread, the composer with its menus open, the sidebar) from Helen, and write `docs/ui-reference.md`: measured widths, paddings, radii, font sizes and colours for each element, as CSS custom properties in `src/renderer/theme.css`. Use only measurements, not OpenAI's image or icon files; draw Margin's own icons.
 - [ ] **Step 1: Write the failing tests.**
   - `enter_sends_plain_and_clears_the_composer`.
   - `shift_enter_inserts_a_newline`.
@@ -560,6 +578,93 @@ This task writes no product code. It measures Claude's delay and settles how an 
 - [ ] **Step 6: Rerun Task 15 Steps 1 to 3** so that the `.dmg`, `README.md` and `PRIVACY.md` cover Claude: where Claude conversations are stored (Margin's `claude-threads` folder, plain JSON, not encrypted), and that ⌘I context goes to Anthropic for Claude chats.
 - [ ] **Step 7: Commit.** `git commit -m "feat(claude): run claude chats with streaming and side chats"`
 
+### Task 20: Model and reasoning pickers
+
+**Files:**
+- Create: `src/renderer/components/ModelPicker.tsx`, `src/renderer/components/ReasoningPicker.tsx`, `tests/renderer/pickers.test.tsx`
+- Modify: `src/shared/chat-provider.ts`, `src/codex/codex-provider.ts`, `src/claude/claude-provider.ts`, `src/renderer/components/Composer.tsx`
+
+**Interfaces:**
+- Produces:
+  - `type ModelOption = Readonly<{ provider: ProviderId; id: string; label: string; reasoningLevels: ReadonlyArray<string>; defaultReasoning: string; acceptsImages: boolean; acceptsPdfs: boolean }>`
+  - `ChatProvider.listModels(): Promise<ReadonlyArray<ModelOption>>`. Codex maps `model/list` (`supportedReasoningEfforts`, `defaultReasoningEffort`, `inputModalities`); `acceptsPdfs` is `false` for Codex. Claude lists `CLAUDE_MODELS`, a constant naming `claude-opus-5-5` (levels `low` to `max`, default `CLAUDE_DEFAULT_EFFORT`, images and PDFs accepted) and any further model Helen adds; each entry is checked once against `client.models.retrieve(id)` at sign-in.
+  - `startTurn` input gains `model: string` and `reasoning: string`. Codex sends them as `turn/start` `model` and `effort`; Claude sends `model` and `output_config.effort`.
+  - The chat's last choice is stored with the chat and preselected next time.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `reasoning_choices_follow_the_chosen_model`: switching from a model with levels `["low","medium","high"]` to one with `["medium","high"]` while `low` is selected selects that model's default and shows the note "Reasoning set to medium; this model has no low".
+  - `codex_turn_carries_model_and_effort`; `claude_turn_carries_model_and_effort`.
+  - `provider_picker_is_only_on_a_new_chat`.
+  - `unknown_reasoning_value_is_rejected_before_sending`: a stored value `"turbo"` fails with ``reasoning level `turbo` is not offered by `claude-opus-5-5`; choose low, medium, high, xhigh or max``.
+- [ ] **Step 2–4: Fail, implement, pass.** Commit: `git commit -m "feat(composer): pick model and reasoning level per message"`
+
+### Task 21: File and image attachments
+
+**Files:**
+- Create: `src/main/attachments.ts`, `src/renderer/components/AttachmentChips.tsx`, `tests/main/attachments.test.ts`, `tests/renderer/attachments.test.tsx`, `tests/fixtures/attachments/` (a PNG, a 2-page PDF, a `.py` file, a binary `.zip`)
+- Modify: `src/codex/codex-provider.ts`, `src/claude/claude-provider.ts`, `src/renderer/components/Composer.tsx`
+
+**Interfaces:**
+- Produces:
+  - `ATTACHMENT_LIMITS = { imageBytes: 20 * 1024 * 1024, pdfBytes: 32 * 1024 * 1024, textBytes: 1 * 1024 * 1024, perMessage: 10 }` (the PDF limit is Claude's request limit; the others keep a message well under it).
+  - `type Attachment = Readonly<{ id: string; kind: "image" | "pdf" | "text"; name: string; storedPath: string; bytes: number; mediaType: string }>`. Files are copied into `~/Library/Application Support/Margin/attachments/<chat id>/` when attached, so later edits to the original do not change a sent message.
+  - `function classifyAttachment(name: string, firstBytes: Uint8Array): Attachment["kind"]` decides by content signature, not by extension alone; anything else is rejected with ``cannot attach `{name}`; Margin accepts images, PDFs and text files``.
+  - Codex: an image becomes `{ type: "localImage", path: storedPath }`; a text file becomes a text item headed `ATTACHED FILE {name}`; a PDF becomes a text item of its extracted text (with `pdfjs-dist`), headed `ATTACHED PDF {name} (text only)`. A model whose `acceptsImages` is false rejects images before sending.
+  - Claude: an image becomes a base64 `image` block, a PDF a base64 `document` block, a text file a `text` block headed as above. Attachments come before the ⌘I context block, which comes before the question.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `each_fixture_is_classified_by_content`; `zip_is_rejected_with_the_accepted_kinds`.
+  - `limits_are_enforced_at_each_boundary`: sizes limit − 1, limit, limit + 1 for each kind.
+  - `codex_image_becomes_local_image_with_the_copied_path`; `codex_pdf_becomes_extracted_text`.
+  - `claude_pdf_becomes_a_document_block`.
+  - `order_is_attachments_then_context_then_question` for both providers.
+  - `image_sent_to_a_text_only_model_is_refused_before_sending`, with the model name in the message.
+- [ ] **Step 2–4: Fail, implement, pass.** Commit: `git commit -m "feat(composer): attach images, pdfs and text files"`
+
+### Task 22: Push-to-talk dictation
+
+**Files:**
+- Create: `src/main/speech/transcriber.ts`, `src/renderer/voice/push-to-talk.ts`, `tests/main/transcriber.test.ts`, `tests/renderer/push-to-talk.test.ts`, `scripts/fetch-whisper-model.sh`
+- Modify: `electron-builder.yml` (microphone usage description), `src/renderer/components/Composer.tsx`
+
+**Interfaces:**
+- Produces:
+  - Transcription runs on the Mac with whisper.cpp (MIT licence, free) and the `base.en` model, downloaded once by `scripts/fetch-whisper-model.sh` with its SHA-256 checked. `function transcribe(wavPath: string, options: Readonly<{ binary: string; model: string; exec?: ExecFile }>): Promise<string>` with a timeout of `TRANSCRIBE_TIMEOUT_MS = 30 * 1000`.
+  - `PUSH_TO_TALK_KEY` is a named setting (default: hold the right ⌥ key). Holding it records 16 kHz mono audio with `getUserMedia`; releasing it transcribes, puts the text in the composer and sends it. Whether a spoken message carries ⌘I context is the setting `VOICE_SENDS_CONTEXT` (open question below). When it does, the context is read at the moment the key goes down, because that is when the user was reading.
+  - `MAX_RECORDING_MS = 2 * 60 * 1000`; recording stops there with the note "Recording stopped at 2 minutes".
+  - Microphone permission is requested with `systemPreferences.askForMediaAccess("microphone")`; a refusal shows "Margin needs microphone access. Open System Settings › Privacy & Security › Microphone" and records nothing.
+
+- [ ] **Step 1: Write the failing tests** (fake recorder, fake transcriber exec).
+  - `release_transcribes_and_sends`; `release_after_under_300_ms_sends_nothing`.
+  - `context_is_read_at_key_down_not_key_up` (scroll between the two must not change it).
+  - `denied_microphone_shows_the_settings_path`.
+  - `transcriber_timeout_names_the_limit`.
+  - `whisper_model_with_a_wrong_hash_is_rejected`.
+- [ ] **Step 2–4: Fail, implement, pass.** Manual check: dictate the film's question "does this look right?" five times and record the word error and the time from key release to send in `docs/spikes/voice.md`.
+- [ ] **Step 5: Commit.** `git commit -m "feat(voice): add push-to-talk dictation"`
+
+### Task 23: Read answers aloud
+
+**Files:**
+- Create: `src/renderer/voice/read-aloud.ts`, `tests/renderer/read-aloud.test.ts`
+
+**Interfaces:**
+- Produces: a speaker button on each answer, and the setting `READ_ANSWERS_ALOUD` (default off; on means every spoken question's answer is read). Speech uses the macOS system voices through the Web Speech API `speechSynthesis`; code blocks are skipped and replaced by "code block, N lines". Pressing Esc stops speech.
+
+- [ ] **Step 1: Tests** `code_blocks_are_not_read_verbatim`, `escape_stops_speech`, `answers_to_typed_questions_are_not_read_by_default`. Fail, implement, pass. Confirm by hand that `speechSynthesis.getVoices()` returns system voices inside Electron on macOS 14; if it does not, stop and report rather than add another speech engine.
+- [ ] **Step 2: Commit.** `git commit -m "feat(voice): read answers aloud"`
+
+### Task 24 (optional): Live spoken conversation with Codex
+
+This uses an experimental Codex API and works only for Codex chats. Do it after Tasks 22 and 23 have been used for a while.
+
+**Files:**
+- Create: `spikes/probe-realtime.mjs`, `docs/spikes/realtime.md`, `src/codex/realtime-session.ts`, `tests/codex/realtime-session.test.ts`
+
+- [ ] **Step 1: Spike.** Regenerate bindings with `--experimental`. Start `thread/realtime/start` with `transport: { type: "webrtc", sdp }`, `outputModality` audio, and a voice from `thread/realtime/listVoices`. Record whether Helen's ChatGPT plan allows it, the delay from end of speech to first audio, and whether ⌘I context can be added with `thread/realtime/appendText` before speaking. Stop and report if the plan does not allow it.
+- [ ] **Step 2: Build** a "Talk" button on Codex chats that opens a realtime session for the current thread, shows the live transcript from `thread/realtime/transcript/delta`, and ends with `thread/realtime/stop`. Tests use `FakeAppServer` for start, transcript, error and close; a `thread/realtime/error` notification shows its message and ends the session.
+- [ ] **Step 3: Commit.** `git commit -m "feat(voice): add live spoken conversation for codex chats"`
+
 ## Risks and open questions
 
 | Risk | Effect | What the plan does |
@@ -571,6 +676,9 @@ This task writes no product code. It measures Claude's delay and settles how an 
 | Codex shares `~/.codex` with the user's own Codex CLI. | Signing out in Margin signs out the CLI too. | Settings says so next to the Sign out button. A separate `CODEX_HOME` is a later option, not in this plan. |
 | Claude Pro and Max subscribers expect to sign in with claude.ai. | They may think Claude sign-in is missing. | The sign-in screen says that Anthropic does not allow claude.ai login in other apps, and that Max, Ultra and Team plans include monthly API credits usable through a Claude Console sign-in. Ask Anthropic for approval before ever adding claude.ai login. |
 | Thinking cannot be turned off on `claude-opus-5-5`. | The first text token may arrive later than with Codex. | Task 16 measures it at effort `low` and `medium`; the effort setting is exposed in Settings. The model is not changed without Helen's decision. |
+| Codex takes no PDF input. | A PDF sent to a Codex chat loses its figures and layout. | Margin sends the extracted text and labels it "text only"; Claude chats receive the PDF itself. |
+| Should a spoken message carry ⌘I context by default? | Wrong default either surprises the user or loses the reading context. | Open question for Helen; `VOICE_SENDS_CONTEXT` is a setting until she decides. |
+| Live voice relies on an experimental Codex API and an unknown plan entitlement. | It may change or be unavailable. | Task 24 is optional, starts with a spike, and stops if the plan does not allow it. |
 | Claude conversations live in Margin's own files, not on a server. | Losing the folder loses the history; the files hold the user's text in plain JSON. | Atomic writes; `PRIVACY.md` names the folder; deleting a chat deletes its file. |
 
 ## Out of scope for this plan
@@ -580,4 +688,7 @@ This task writes no product code. It measures Claude's delay and settles how an 
 - Code signing and notarisation (needed before distributing to people who do not build it themselves).
 - A separate `CODEX_HOME` for Margin.
 - claude.ai (Pro, Max) sign-in, unless Anthropic approves it for Margin.
+- Plugins, skills, MCP servers, apps and artifacts.
+- Copying OpenAI's logos, icons or other brand assets; Margin matches Codex's layout only.
+- Live spoken conversation with Claude (the Messages API has no audio).
 - Claude through Amazon Bedrock, Google Cloud or Microsoft Foundry.
