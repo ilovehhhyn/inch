@@ -2,11 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Margin, an open-source macOS desktop chat app in which pressing ⌘I sends the question together with the text visible in the pane the user scrolled last, using the local Codex app-server for ChatGPT sign-in and model calls.
+**Goal:** Build Margin, an open-source macOS desktop chat app in which pressing ⌘I sends the question together with the text visible in the pane the user scrolled last. Users sign in with OpenAI (through the local Codex app-server) or with Claude (through the Anthropic API).
 
-**Architecture:** An Electron app. The main process starts `codex app-server` as a child process and speaks its JSON-RPC protocol over stdio, using TypeScript bindings generated from the pinned Codex version. The renderer draws every pane itself (main chat, side chats, code diff), so on ⌘I it reads the exact visible text from its own DOM, with no screenshot and no text recognition. Pure functions choose and format that context; the input/output shell around them is thin.
+**Architecture:** An Electron app with two model providers behind one interface, `ChatProvider`. The OpenAI provider starts `codex app-server` as a child process and speaks its JSON-RPC protocol over stdio, using TypeScript bindings generated from the pinned Codex version. The Claude provider calls the Anthropic Messages API with the official TypeScript SDK and keeps each conversation in a local file, because that API does not store conversations. The renderer draws every pane itself (main chat, side chats, code diff), so on ⌘I it reads the exact visible text from its own DOM, with no screenshot and no text recognition. Pure functions choose and format that context; the input/output shell around them is thin.
 
-**Tech stack:** Electron, TypeScript, React, Vite (`electron-vite`), Vitest with Testing Library, Playwright for Electron end-to-end tests, `electron-builder` for the `.dmg`. Codex CLI 0.146.0 as an external, user-installed dependency.
+**Tech stack:** Electron, TypeScript, React, Vite (`electron-vite`), Vitest with Testing Library, Playwright for Electron end-to-end tests, `electron-builder` for the `.dmg`. Codex CLI 0.146.0 as an external, user-installed dependency. `@anthropic-ai/sdk` for Claude, and the `ant` CLI (optional, user-installed) for browser sign-in to a Claude Console account.
+
+**Build order:** Tasks 0 to 15 build the app with the OpenAI provider and ship it. Tasks 16 to 19 add the Claude provider; they need Tasks 5, 10 and 11 to be done, and Task 15's `.dmg` build is rerun after them.
 
 **Spec:** the product rules are written out in the section "Product spec" below, taken from the concept film and the brainstorm on the Margin page. There is no separate spec file yet; Task 0 creates `docs/spec.md` from that section.
 
@@ -31,6 +33,23 @@ These were checked on 2026-11-20 against Codex CLI 0.146.0 on this machine (`cod
 
 **Not yet measured:** time from `turn/start` to the first `item/agentMessage/delta`, and whether Codex's shell tool can be switched off for a thread. Task 0 measures both before any product code is written.
 
+### Facts for the Claude provider
+
+These were checked on 2026-11-21 against Anthropic's documentation and the bundled Claude API reference.
+
+| Fact | Evidence |
+| --- | --- |
+| Third-party products may not offer claude.ai (Pro, Max) login: "Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits for their products." Products should use API key authentication. | [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview), note under "Get started". |
+| Claude Max, Ultra and Team plans include monthly API credits, used through an API key from the Claude Console organization linked to the plan. | [Support article 15036540](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), update of 2026-10-07. |
+| `ant auth login` opens a browser, signs in to a Claude Console account, and stores a short-lived token in a named profile under `~/.config/anthropic/`. `ant auth print-credentials --access-token` prints a fresh token for that profile. It is meant for interactive use on the user's own machine. | Bundled reference `shared/anthropic-cli.md`. |
+| An exported `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` overrides every profile, even when empty. | Bundled reference `shared/anthropic-cli.md`, "The #1 auth trap". |
+| The TypeScript client accepts an explicit `apiKey` (`new Anthropic({ apiKey })`) and streams with `client.messages.stream(...)`; `stream.finalMessage()` returns the complete message. | Bundled reference `typescript/claude-api/README.md`, `streaming.md`. |
+| The default model is `claude-opus-5-5` ($4 input, $20 output per million tokens). Thinking cannot be turned off on it; `output_config.effort` (`low` to `max`, default `medium`) controls how long it thinks. | Bundled reference, model table and thinking table. |
+| A request can be declined with `stop_reason: "refusal"`; the server-side `fallbacks: "default"` parameter (beta `server-side-fallback-2026-07-01`) reruns it on another model in the same call. | Bundled reference, "Refusal Fallbacks". |
+| `ant` is not installed on this machine; `claude` (Claude Code) is. | `which ant claude`, 2026-11-21. |
+
+**Not yet measured for Claude:** time to the first text token with `claude-opus-5-5` at effort `low` and `medium`, with and without a 12,000-character context, and whether an `ant` OAuth token passed as `authToken` needs the `anthropic-beta: oauth-2025-04-20` header through the SDK. Task 16 measures both.
+
 ## Product spec
 
 1. Margin looks like a standard chat app: a sidebar of chats, a centred main thread, a rounded composer. It shows **no Margin logo, avatar or name** inside answers or the composer.
@@ -40,7 +59,8 @@ These were checked on 2026-11-20 against Codex CLI 0.146.0 on this machine (`cod
 5. Panes: the main chat; any number of side chats (each forked from the main chat); one code-diff pane showing `git diff` for a folder the user chooses. The right-hand panel stacks the diff above the side chats.
 6. The answer appears in the thread where the user typed. The assistant names what it read in its first sentence (section, message, file and line).
 7. Diff context carries file names and new-file line numbers, so answers can cite `get_lr()` on line 39.
-8. Sign-in goes through the Codex app-server: ChatGPT browser login, ChatGPT device code, or an OpenAI API key typed by the user.
+8. Sign-in offers two providers. **OpenAI** goes through the Codex app-server: ChatGPT browser login, ChatGPT device code, or an OpenAI API key typed by the user. **Claude** goes through the Anthropic API: browser sign-in to a Claude Console account (through `ant auth login`), or an Anthropic API key typed by the user. Margin does not offer claude.ai (Pro, Max) login, because Anthropic does not allow it in third-party products without approval.
+8a. Each chat belongs to one provider, chosen when the chat is created. Side chats use the provider of the chat they were forked from. The ⌘I rules are the same for both providers.
 9. Margin never runs commands or edits files on the user's behalf.
 10. Nothing on screen is read until ⌘I. Only the chosen pane is read.
 
@@ -52,6 +72,8 @@ These were checked on 2026-11-20 against Codex CLI 0.146.0 on this machine (`cod
 - Context budget: `CONTEXT_BUDGET_CHARS = 12_000` (about 3,000 tokens), a named constant with that reason beside it.
 - Capture budget: reading context on ⌘I must take under `CAPTURE_BUDGET_MS = 20` on the end-to-end fixture.
 - Every thread Margin creates uses `sandbox: "read-only"`, `approvalPolicy: "never"`, and `cwd` set to Margin's own empty directory `~/Library/Application Support/Margin/empty-workspace`.
+- Claude: default model `CLAUDE_DEFAULT_MODEL = "claude-opus-5-5"`; effort is always sent explicitly (`CLAUDE_DEFAULT_EFFORT`, chosen from Task 16's measurement); `max_tokens` is `64_000` with streaming. Margin never reads `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_PROFILE` from its environment and removes them from the environment of every child process.
+- Secrets (API keys, OAuth tokens) are stored only with Electron `safeStorage` or in the `ant` profile, never in plain files, logs, error messages or the renderer.
 - Child processes are started with an argument array and an explicit environment, never a shell string.
 - No silent fallbacks. A setting or state that cannot be honoured is an error with a message naming the fix.
 - House style: the `mdx` skill (Helen's rules) for code, tests, commits and docs.
@@ -82,6 +104,12 @@ margin/
       codex-version.ts              Parses and checks `codex --version`.
       codex-client.ts               Typed methods over the connection (initialize, account, thread, turn).
       server-requests.ts            Answers server-to-client requests (declines all approvals).
+      codex-provider.ts             ChatProvider implementation over CodexClient (Task 17).
+    claude/
+      claude-credentials.ts         Resolves Claude credentials: stored API key or `ant` profile token.
+      ant-cli.ts                    Runs `ant auth login`, `print-credentials` and `logout` with bounded waits.
+      claude-thread-store.ts        Atomic per-thread JSON files of Anthropic messages.
+      claude-provider.ts            ChatProvider implementation over the Messages API.
     main/
       main.ts                       Electron entry: window, menus, lifecycle.
       ipc.ts                        Typed IPC handlers that expose the Codex client to the renderer.
@@ -89,6 +117,8 @@ margin/
       layout-store.ts               Atomic read/write of panel layout and diff folder.
     shared/
       ipc-contract.ts               Channel names and payload types shared by main and renderer.
+      provider-events.ts            ProviderEvent: the provider-neutral stream events the reducer consumes.
+      chat-provider.ts              ChatProvider interface implemented by the OpenAI and Claude providers.
       context-format.ts             Renders and parses the screen-context text block.
     renderer/
       app.tsx                       Root layout: sidebar, main chat, right panel.
@@ -229,7 +259,9 @@ This task writes no product code. It answers the two open questions and records 
   - `startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: ScreenContext | null }>): Promise<TurnId>`; `interruptTurn(threadId, turnId)`
   - `type ThreadId = string & { readonly brand: "ThreadId" }`; same for `TurnId`.
   - `MARGIN_INSTRUCTIONS`: fixed text, in full: "You are a reading companion inside a chat app. Some user messages begin with a block marked MARGIN SCREEN CONTEXT. That block is the text the user was looking at when they asked. When it is present, the question refers to it: start your answer by naming what you read (the message, section, file and line), then answer. Quote file names, function names and line numbers exactly as they appear in the block. Never run commands or edit files."
-  - `function reduceThread(state: ThreadView, notification: ServerNotification): ThreadView` where `ThreadView = Readonly<{ messages: ReadonlyArray<DisplayMessage>; activeTurn: TurnId | null; error: string | null }>` and `DisplayMessage = Readonly<{ id: string; role: "user" | "assistant"; text: string; status: "streaming" | "done" | "failed" }>`
+  - `type ProviderEvent = { type: "delta"; threadId: ThreadId; turnId: TurnId; text: string } | { type: "completed"; threadId: ThreadId; turnId: TurnId; status: "completed" | "interrupted" | "failed" | "refused"; error: string | null } | { type: "accountChanged"; provider: "codex" | "claude" }` in `src/shared/provider-events.ts`. The reducer consumes these so that the Claude provider (Task 18) can reuse it unchanged.
+  - `function toProviderEvent(notification: ServerNotification): ProviderEvent | null` in `src/codex/codex-client.ts` maps `item/agentMessage/delta`, `turn/completed` and `account/updated`, and returns `null` for every other method.
+  - `function reduceThread(state: ThreadView, event: ProviderEvent): ThreadView` where `ThreadView = Readonly<{ messages: ReadonlyArray<DisplayMessage>; activeTurn: TurnId | null; error: string | null }>` and `DisplayMessage = Readonly<{ id: string; role: "user" | "assistant"; text: string; status: "streaming" | "done" | "failed" }>`
   - `answerServerRequest(request: ServerRequest): JsonValue` declines every approval (`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`, `applyPatchApproval`, `execCommandApproval`, `item/permissions/requestApproval`) and answers `item/tool/requestUserInput` with an empty answer. Every decline is logged with method and thread id.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -428,6 +460,106 @@ END MARGIN SCREEN CONTEXT
 - [ ] **Step 4: Add a CI job** that builds the `.dmg` on tags.
 - [ ] **Step 5: Commit.** `git commit -m "build: package margin as a macos dmg"`
 
+### Task 16: Claude latency and sign-in spike
+
+This task writes no product code. It measures Claude's delay and settles how an `ant` token reaches the SDK.
+
+**Files:**
+- Create: `spikes/probe-claude.mjs`, `docs/spikes/claude.md`
+
+**Interfaces:**
+- Produces: `CLAUDE_DEFAULT_EFFORT` (`"low"` or `"medium"`), and `ANT_TOKEN_NEEDS_OAUTH_BETA` (`true` or `false`), both written in `docs/spikes/claude.md`.
+
+- [ ] **Step 1: Ask Helen for a dollar cap before any paid call.** The expected cost is under $1: 40 requests of about 3,500 input and 200 output tokens at $4 and $20 per million tokens is about $0.56 + $0.16.
+- [ ] **Step 2: Write `spikes/probe-claude.mjs`.** It reads the API key from the macOS Keychain entry Helen creates for the spike (never from the environment or chat), and runs 10 streamed requests in each of four settings: effort `low` and `medium`, each with no context and with a 12,000-character context block before the question `Reply with the single word OK.`. Per request it records time to the first `text_delta`, time to `message_stop`, `usage.input_tokens` and `usage.output_tokens`. It adds up the cost from `usage` after each request and stops with an error before the next request would pass the cap.
+- [ ] **Step 3: Run it.** Command: `node spikes/probe-claude.mjs > docs/spikes/raw-claude-latency.jsonl`. Expected: 40 lines and a printed total cost under the cap.
+- [ ] **Step 4: Test an `ant` token.** Install `ant`, run `ant auth login --profile margin-spike`, then send one request with `new Anthropic({ authToken })` using the token from `ant auth print-credentials --access-token --profile margin-spike`, once without and once with `defaultHeaders: { "anthropic-beta": "oauth-2025-04-20" }`. Record which works as `ANT_TOKEN_NEEDS_OAUTH_BETA`, and record the `ant` version as `SUPPORTED_ANT_VERSION`.
+- [ ] **Step 5: Write `docs/spikes/claude.md`.** It gives medians and 90th percentiles per setting, compares them with Task 0's Codex numbers in one table, chooses `CLAUDE_DEFAULT_EFFORT` (the lower effort unless its answers are wrong on the probe), and states that 10 runs per setting from one machine is a small sample.
+- [ ] **Step 6: Commit.** `git commit -m "docs(spike): measure claude latency and ant token use"`
+
+### Task 17: ChatProvider interface, with Codex behind it
+
+**Files:**
+- Create: `src/shared/chat-provider.ts`, `src/codex/codex-provider.ts`, `tests/codex/codex-provider.test.ts`
+- Modify: `src/main/ipc.ts`, `src/shared/ipc-contract.ts`, `src/renderer/app.tsx`
+
+**Interfaces:**
+- Consumes: `CodexClient` (Tasks 4 and 5), `ProviderEvent` (Task 5).
+- Produces:
+  - `type ProviderId = "codex" | "claude"`
+  - `type ProviderAccount = Readonly<{ provider: ProviderId; signedIn: boolean; label: string | null }>` (`label` is "ChatGPT Plus", "Claude Console" or "API key"; never a key or token)
+  - `interface ChatProvider { readonly id: ProviderId; readAccount(): Promise<ProviderAccount>; startThread(): Promise<ThreadId>; forkThread(threadId: ThreadId, lastTurnId: TurnId | null): Promise<ThreadId>; startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: ScreenContext | null }>): Promise<TurnId>; interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void>; readThread(threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>>; onEvent(handler: (event: ProviderEvent) => void): Unsubscribe }`
+  - `function createCodexProvider(client: CodexClient): ChatProvider`
+  - IPC channels gain a `provider: ProviderId` field; `Layout.sideChats` entries and the chat list gain `provider`.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `codex_provider_forwards_start_turn_with_context_first`: same assertion as Task 10's, through the interface.
+  - `codex_provider_emits_provider_events_only`: a fake `turn/started` notification produces no event; a delta produces one `delta` event.
+  - `ipc_rejects_an_unknown_provider_id`: `"gemini"` fails with ``unknown provider `gemini`; expected codex or claude``.
+- [ ] **Step 2: Run and confirm failure.**
+- [ ] **Step 3: Implement**, and move every renderer call from Codex-specific channels to the provider channels. Rerun the whole unit and end-to-end suites; they must pass unchanged.
+- [ ] **Step 4: Commit.** `git commit -m "refactor(provider): put codex behind a chat provider interface"`
+
+### Task 18: Claude sign-in
+
+**Files:**
+- Create: `src/claude/claude-credentials.ts`, `src/claude/ant-cli.ts`, `tests/claude/claude-credentials.test.ts`, `tests/claude/ant-cli.test.ts`
+- Modify: `src/renderer/components/SignIn.tsx`, `tests/renderer/sign-in.test.tsx`
+
+**Interfaces:**
+- Produces:
+  - `type ClaudeCredential = { kind: "apiKey"; apiKey: string } | { kind: "antProfile"; profile: "margin"; accessToken: string; fetchedAtMs: number }`
+  - `function readClaudeCredential(store: SecretStore, ant: AntCli, clock: () => number): Promise<ClaudeCredential | null>`: a stored key wins; otherwise a token from the `margin` profile if one exists; otherwise `null`.
+  - `function createClaudeClient(credential: ClaudeCredential): Anthropic` builds `new Anthropic({ apiKey })` or `new Anthropic({ authToken, defaultHeaders })` (headers per `ANT_TOKEN_NEEDS_OAUTH_BETA`). It never lets the SDK read the environment.
+  - `ANT_TOKEN_REFRESH_MS = 5 * 60 * 1000`: an `ant` token older than this is fetched again with `print-credentials`, which refreshes it if needed.
+  - `type AntCli = { version(): Promise<string>; login(profile: "margin"): Promise<void>; accessToken(profile: "margin"): Promise<string>; logout(profile: "margin"): Promise<void> }`. Every call runs `ant` with an argument array, an environment with `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_PROFILE` removed, and a timeout: 5 minutes for `login`, 10 seconds for the others.
+  - `SecretStore` wraps Electron `safeStorage`: `saveApiKey(provider, key)`, `readApiKey(provider)`, `deleteApiKey(provider)`.
+  - Sign-in screen: a "Claude" section with "Sign in with Claude Console" and "Use an Anthropic API key". A typed key is checked once with `client.models.list()` (no tokens used) before it is saved.
+
+- [ ] **Step 1: Write the failing tests** (fake `AntCli`, fake `SecretStore`, fake clock).
+  - `stored_api_key_wins_over_the_ant_profile`.
+  - `ant_token_is_refetched_after_five_minutes`.
+  - `missing_ant_names_the_install_step`: `version()` fails, so "Sign in with Claude Console" shows ``ant was not found on PATH; install it as described in Anthropic's CLI docs, or use an API key instead``.
+  - `environment_credentials_are_ignored` (from the auth trap above): with `ANTHROPIC_API_KEY=stale` in `process.env`, `createClaudeClient` uses the stored key, and the environment passed to `ant` contains no `ANTHROPIC_` credential variable.
+  - `invalid_key_is_not_saved`: `models.list()` rejects with `AuthenticationError`; the screen shows "Anthropic rejected this API key" and `SecretStore` holds nothing.
+  - `api_key_never_reaches_the_renderer_or_logs`: after saving `sk-ant-test-123`, no IPC payload and no log line contains it.
+  - `no_claude_ai_login_is_offered` (spec 8): the sign-in screen has no control mentioning "claude.ai", "Pro" or "Max".
+- [ ] **Step 2: Run and confirm failure.**
+- [ ] **Step 3: Implement.** Sign out deletes the stored key and runs `ant auth logout --profile margin`; it never touches other `ant` profiles or Claude Code's login.
+- [ ] **Step 4: Run tests; pass. Commit.** `git commit -m "feat(claude): sign in with a claude console account or api key"`
+
+### Task 19: Claude chats, streaming and side chats
+
+**Files:**
+- Create: `src/claude/claude-thread-store.ts`, `src/claude/claude-provider.ts`, `tests/claude/claude-thread-store.test.ts`, `tests/claude/claude-provider.test.ts`, `tests/fakes/fake-anthropic.ts`, `tests/e2e/claude-command-i.spec.ts`
+- Modify: `src/renderer/components/Sidebar.tsx` (provider choice on "New chat")
+
+**Interfaces:**
+- Consumes: `ChatProvider` (Task 17), `ClaudeCredential` and `createClaudeClient` (Task 18), `renderContextBlock` and `MARGIN_INSTRUCTIONS` (Tasks 5 and 8).
+- Produces:
+  - `type ClaudeThreadFile = Readonly<{ version: 1; threadId: ThreadId; model: string; effort: "low" | "medium"; messages: ReadonlyArray<Anthropic.MessageParam>; turns: ReadonlyArray<{ turnId: TurnId; userMessageIndex: number }> }>`, one file per thread in `~/Library/Application Support/Margin/claude-threads/`, written atomically. Unknown keys or another `version` are rejected with a message naming the file.
+  - `function createClaudeProvider(options: Readonly<{ credentials: () => Promise<ClaudeCredential>; store: ClaudeThreadStore; makeClient?: (credential: ClaudeCredential) => Anthropic }>): ChatProvider`
+  - `startTurn` appends a user message whose `content` is `[{ type: "text", text: renderContextBlock(context) }, { type: "text", text: question }]` (only the question without context), then calls `client.beta.messages.stream({ model, max_tokens: 64_000, system: MARGIN_INSTRUCTIONS, messages, output_config: { effort }, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" })` with top-level `cache_control: { type: "ephemeral" }` so that the unchanged history is cached between turns. Each `text_delta` becomes a `delta` event. On `message_stop` the whole `finalMessage().content` (thinking blocks included, unchanged) is appended as the assistant message.
+  - `interruptTurn` aborts the stream. The assistant message stored for an interrupted turn holds only the text already shown, or the text `(stopped before any answer)` when none was shown, so that user and assistant messages keep alternating.
+  - `forkThread` copies `messages` up to and including the assistant reply of `lastTurnId` into a new thread file.
+  - Errors map to `completed` events with `status: "failed"`, most specific first: `Anthropic.AuthenticationError` gives "Claude sign-in expired. Sign in again" and an `accountChanged` event; `Anthropic.RateLimitError` gives "Claude rate limit reached. Try again in N s" with N from `retry-after`; `Anthropic.APIConnectionError` gives "Cannot reach Anthropic. Check the connection". `stop_reason: "refusal"` gives `status: "refused"` and "Claude declined to answer this", with the `stop_details.category` when present.
+
+- [ ] **Step 1: Write the failing tests** (fake Anthropic client recording each request and replaying scripted stream events; it throws on any unscripted call).
+  - `command_i_sends_context_block_then_question_in_one_user_message`.
+  - `request_carries_model_effort_fallbacks_and_cache_control`: assert the exact request fields above.
+  - `assistant_content_is_stored_unchanged_including_thinking_blocks`.
+  - `interrupt_keeps_messages_alternating`: interrupt before any text; the stored thread ends with a user message followed by an assistant message reading `(stopped before any answer)`.
+  - `fork_copies_messages_through_the_chosen_turn` and `fork_leaves_the_original_thread_unchanged`.
+  - `each_error_maps_to_its_message`: a table over the three error classes and a refusal.
+  - `thread_file_with_unknown_keys_is_rejected`.
+  - `reloaded_thread_hides_the_context_block`: `readThread` returns only the question for a ⌘I message.
+- [ ] **Step 2: Run and confirm failure.**
+- [ ] **Step 3: Implement.** Use the SDK's types (`Anthropic.MessageParam`, the typed error classes); do not define parallel types or match error strings.
+- [ ] **Step 4: End-to-end test** `claude_diff_scenario_from_the_film`: Task 14's diff scenario with a Claude chat and the fake client. Assert the same context block and that the answer appears in the main chat.
+- [ ] **Step 5: Manual check with a real key** (within the cap from Task 16): one ⌘I question about `warmup.diff` must name `get_lr()` and line 39. Record `firstDeltaMs` in `docs/spikes/claude.md`.
+- [ ] **Step 6: Rerun Task 15 Steps 1 to 3** so that the `.dmg`, `README.md` and `PRIVACY.md` cover Claude: where Claude conversations are stored (Margin's `claude-threads` folder, plain JSON, not encrypted), and that ⌘I context goes to Anthropic for Claude chats.
+- [ ] **Step 7: Commit.** `git commit -m "feat(claude): run claude chats with streaming and side chats"`
+
 ## Risks and open questions
 
 | Risk | Effect | What the plan does |
@@ -437,6 +569,9 @@ END MARGIN SCREEN CONTEXT
 | The shell tool may not be removable (Task 0). | The model could run read-only commands in Margin's empty folder. | `cwd` is an empty Margin-owned folder, the sandbox is read-only, approvals are declined, and instructions forbid commands. Command items are hidden from the thread and logged. |
 | First-token delay is unmeasured. | The product's main promise could fail. | Task 0 measures it and gates the build. |
 | Codex shares `~/.codex` with the user's own Codex CLI. | Signing out in Margin signs out the CLI too. | Settings says so next to the Sign out button. A separate `CODEX_HOME` is a later option, not in this plan. |
+| Claude Pro and Max subscribers expect to sign in with claude.ai. | They may think Claude sign-in is missing. | The sign-in screen says that Anthropic does not allow claude.ai login in other apps, and that Max, Ultra and Team plans include monthly API credits usable through a Claude Console sign-in. Ask Anthropic for approval before ever adding claude.ai login. |
+| Thinking cannot be turned off on `claude-opus-5-5`. | The first text token may arrive later than with Codex. | Task 16 measures it at effort `low` and `medium`; the effort setting is exposed in Settings. The model is not changed without Helen's decision. |
+| Claude conversations live in Margin's own files, not on a server. | Losing the folder loses the history; the files hold the user's text in plain JSON. | Atomic writes; `PRIVACY.md` names the folder; deleting a chat deletes its file. |
 
 ## Out of scope for this plan
 
@@ -444,3 +579,5 @@ END MARGIN SCREEN CONTEXT
 - Windows and Linux builds.
 - Code signing and notarisation (needed before distributing to people who do not build it themselves).
 - A separate `CODEX_HOME` for Margin.
+- claude.ai (Pro, Max) sign-in, unless Anthropic approves it for Margin.
+- Claude through Amazon Bedrock, Google Cloud or Microsoft Foundry.

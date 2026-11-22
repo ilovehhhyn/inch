@@ -13,7 +13,7 @@ This repository holds the concept film and the build plan. The app itself is not
 | `demo/margin-demo.mp4` | The 52-second concept film, 1920×1080, 30 fps. |
 | `demo/margin-launch.html` | The film as a web page, with play and scrub controls, the product brainstorm, and the prompt that describes the film. Open it in a browser. |
 | `demo/render-film.mjs` | Renders the page to the MP4 by seeking its timeline frame by frame. |
-| `docs/superpowers/plans/2026-11-20-margin-app.md` | The implementation plan: an Electron app on top of the local Codex app-server, in 16 test-first tasks. |
+| `docs/superpowers/plans/2026-11-20-margin-app.md` | The implementation plan: an Electron app with two sign-in options, OpenAI through the local Codex app-server and Claude through the Anthropic API, in 20 test-first tasks. |
 | `spikes/probe-app-server.mjs` | A probe that starts `codex app-server` and checks sign-in, the model list and thread creation without sending a model turn. |
 
 ## Render the film again
