@@ -65,7 +65,7 @@ Checked on 2026-11-21 against Codex CLI 0.146.0 (`codex app-server generate-ts -
 
 ## Product spec
 
-1. Margin matches the Codex desktop app's layout and interaction: the sidebar, the centred thread, the composer and its controls, spacing, type sizes and keyboard behaviour, taken from reference screenshots (Task 6). It does not copy OpenAI's logos, icons, name or other brand assets. It shows **no Margin logo, avatar or name** inside answers or the composer.
+1. Margin's interface is the one in the concept film, `demo/margin-launch.html` (Helen, 2026-11-21): a sidebar of chats, a centred thread, a rounded composer, and the right-hand panel with the diff above the side chat. Task 6 takes its measurements from that file. It shows **no Margin logo, avatar or name** inside answers or the composer.
 2. **Enter** sends the message without screen context. **⌘I** sends it with screen context. Nothing on screen changes when ⌘I is pressed: no chip, no scan effect, no attachment.
 3. The context is the text visible in **the pane the user scrolled last**. If the user has not scrolled any pane since their previous message, the context comes from the pane that has keyboard focus.
 4. Inside that pane, visible blocks are weighted by distance from the pane's vertical centre; the centre block is always included.
@@ -76,7 +76,7 @@ Checked on 2026-11-21 against Codex CLI 0.146.0 (`codex app-server generate-ts -
 8a. Each chat belongs to one provider, chosen when the chat is created. Side chats use the provider of the chat they were forked from. The ⌘I rules are the same for both providers.
 11. The composer has pickers for the provider (new chat only), the model, and the reasoning level. The reasoning choices are the ones the chosen model supports. The model and reasoning level can change between messages.
 12. Files can be attached with the "+" button, drag and drop, or paste: images (PNG, JPEG, GIF, WebP), PDFs, and text or code files. Attachments show as chips above the composer and in the sent message. Unlike ⌘I context, attachments are visible, because the user chose them.
-13. Voice: hold a key to talk; the speech is transcribed on the Mac into the composer and sent when the key is released. Answers can be read aloud. This works for both providers. A live spoken conversation (Task 24) is available for Codex chats only.
+13. Voice: hold the right ⌥ key to talk; the speech is transcribed on the Mac into the composer and sent with ⌘I context when the key is released. Answers can be read aloud. This works for both providers. A live spoken conversation (Task 24) is available for Codex chats only.
 14. Margin offers no plugins, skills, MCP servers, apps or artifacts, even though the Codex app-server supports some of them.
 9. Margin never runs commands or edits files on the user's behalf.
 10. Nothing on screen is read until ⌘I. Only the chosen pane is read.
@@ -302,7 +302,7 @@ This task writes no product code. It answers the two open questions and records 
 - Consumes: `reduceThread`, IPC `thread:*` channels.
 - Produces: `<ChatPane paneId threadId />`, `<Composer onSend(question: string, mode: "plain" | "withContext") busy />`. `ChatPane` exposes its scroll container element through `ref` for Task 9.
 
-- [ ] **Step 0: Write the visual reference.** Collect screenshots of the Codex desktop app (new chat, a long thread, the composer with its menus open, the sidebar) from Helen, and write `docs/ui-reference.md`: measured widths, paddings, radii, font sizes and colours for each element, as CSS custom properties in `src/renderer/theme.css`. Use only measurements, not OpenAI's image or icon files; draw Margin's own icons.
+- [ ] **Step 0: Write the visual reference.** Copy the app-window styles from `demo/margin-launch.html` (the `.window`, `.sidebar`, `.thread`, `.u`, `.a`, `.composer`, `.side`, `.diff-pane` and `.chat-pane` rules) into `src/renderer/theme.css` as CSS custom properties, at the film's 1:1 scale: Geist and Geist Mono, 19 px thread text, 720 px thread column, 64 px composer with 32 px radius, 600 px right panel with a 430 px diff pane. Record each value and its source rule in `docs/ui-reference.md`.
 - [ ] **Step 1: Write the failing tests.**
   - `enter_sends_plain_and_clears_the_composer`.
   - `shift_enter_inserts_a_newline`.
@@ -630,12 +630,15 @@ This task writes no product code. It measures Claude's delay and settles how an 
 **Interfaces:**
 - Produces:
   - Transcription runs on the Mac with whisper.cpp (MIT licence, free) and the `base.en` model, downloaded once by `scripts/fetch-whisper-model.sh` with its SHA-256 checked. `function transcribe(wavPath: string, options: Readonly<{ binary: string; model: string; exec?: ExecFile }>): Promise<string>` with a timeout of `TRANSCRIBE_TIMEOUT_MS = 30 * 1000`.
-  - `PUSH_TO_TALK_KEY` is a named setting (default: hold the right ⌥ key). Holding it records 16 kHz mono audio with `getUserMedia`; releasing it transcribes, puts the text in the composer and sends it. Whether a spoken message carries ⌘I context is the setting `VOICE_SENDS_CONTEXT` (open question below). When it does, the context is read at the moment the key goes down, because that is when the user was reading.
+  - `PUSH_TO_TALK_KEY` is a named setting, default the right ⌥ key (Helen, 2026-11-21). Holding it records 16 kHz mono audio with `getUserMedia`; releasing it transcribes, puts the text in the composer and sends it.
+  - A spoken message always carries ⌘I context, as if sent with ⌘I (Helen, 2026-11-21). The context is read at the moment the key goes down, because that is when the user was reading. The pane rules of Task 9 apply unchanged.
   - `MAX_RECORDING_MS = 2 * 60 * 1000`; recording stops there with the note "Recording stopped at 2 minutes".
   - Microphone permission is requested with `systemPreferences.askForMediaAccess("microphone")`; a refusal shows "Margin needs microphone access. Open System Settings › Privacy & Security › Microphone" and records nothing.
 
 - [ ] **Step 1: Write the failing tests** (fake recorder, fake transcriber exec).
-  - `release_transcribes_and_sends`; `release_after_under_300_ms_sends_nothing`.
+  - `release_transcribes_and_sends_with_context`: the sent input has the context block first, exactly as Task 10's ⌘I send.
+  - `release_after_under_300_ms_sends_nothing`.
+  - `only_the_right_option_key_starts_recording`: the left ⌥ key does not.
   - `context_is_read_at_key_down_not_key_up` (scroll between the two must not change it).
   - `denied_microphone_shows_the_settings_path`.
   - `transcriber_timeout_names_the_limit`.
@@ -677,7 +680,6 @@ This uses an experimental Codex API and works only for Codex chats. Do it after 
 | Claude Pro and Max subscribers expect to sign in with claude.ai. | They may think Claude sign-in is missing. | The sign-in screen says that Anthropic does not allow claude.ai login in other apps, and that Max, Ultra and Team plans include monthly API credits usable through a Claude Console sign-in. Ask Anthropic for approval before ever adding claude.ai login. |
 | Thinking cannot be turned off on `claude-opus-5-5`. | The first text token may arrive later than with Codex. | Task 16 measures it at effort `low` and `medium`; the effort setting is exposed in Settings. The model is not changed without Helen's decision. |
 | Codex takes no PDF input. | A PDF sent to a Codex chat loses its figures and layout. | Margin sends the extracted text and labels it "text only"; Claude chats receive the PDF itself. |
-| Should a spoken message carry ⌘I context by default? | Wrong default either surprises the user or loses the reading context. | Open question for Helen; `VOICE_SENDS_CONTEXT` is a setting until she decides. |
 | Live voice relies on an experimental Codex API and an unknown plan entitlement. | It may change or be unavailable. | Task 24 is optional, starts with a spike, and stops if the plan does not allow it. |
 | Claude conversations live in Margin's own files, not on a server. | Losing the folder loses the history; the files hold the user's text in plain JSON. | Atomic writes; `PRIVACY.md` names the folder; deleting a chat deletes its file. |
 
@@ -689,6 +691,6 @@ This uses an experimental Codex API and works only for Codex chats. Do it after 
 - A separate `CODEX_HOME` for Margin.
 - claude.ai (Pro, Max) sign-in, unless Anthropic approves it for Margin.
 - Plugins, skills, MCP servers, apps and artifacts.
-- Copying OpenAI's logos, icons or other brand assets; Margin matches Codex's layout only.
+- Copying the Codex app's look; Margin uses the film's interface.
 - Live spoken conversation with Claude (the Messages API has no audio).
 - Claude through Amazon Bedrock, Google Cloud or Microsoft Foundry.
