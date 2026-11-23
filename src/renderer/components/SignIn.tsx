@@ -5,12 +5,16 @@ import type { LoginKind, LoginStarted } from "../../shared/auth";
 import type { ProviderAccount } from "../../shared/chat-provider";
 import type { MarginApi } from "../../shared/ipc-contract";
 import type { ProviderId } from "../../shared/provider-id";
+import type { StartupErrorInfo } from "../../shared/startup-error";
 
 export type SignInApi = Pick<MarginApi, "authStart" | "authApiKey" | "authCancel" | "authLogout" | "onAuthChanged" | "claudeSignInConsole" | "claudeSignInApiKey" | "claudeSignOut">;
 
 export type SignInProps = Readonly<{
   api: SignInApi;
   accounts: Readonly<Record<ProviderId, ProviderAccount>>;
+  /** Why Codex cannot be used, or null; the OpenAI section then shows it with a Retry instead of the sign-in choices. */
+  codexProblem: StartupErrorInfo | null;
+  onRetryCodex: () => void;
   /** Called after a sign-in or sign-out finished, so the window reads the accounts again. */
   onAccountsChanged: () => void;
   /** Present when the page was opened from the chat; the page then offers a way back. */
@@ -24,7 +28,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function SignIn({ api, accounts, onAccountsChanged, onClose }: SignInProps): ReactElement {
+export function SignIn({ api, accounts, codexProblem, onRetryCodex, onAccountsChanged, onClose }: SignInProps): ReactElement {
   const [openAi, setOpenAi] = useState<OpenAiProgress>({ kind: "idle" });
   const [claude, setClaude] = useState<ClaudeProgress>("idle");
   const [failure, setFailure] = useState<string | null>(null);
@@ -106,7 +110,17 @@ export function SignIn({ api, accounts, onAccountsChanged, onClose }: SignInProp
       {failure === null ? null : <p role="status">Sign-in failed: {failure}</p>}
       <section aria-label="OpenAI">
         <h2>OpenAI</h2>
-        {openAiAccount.signedIn ? (
+        {codexProblem !== null ? (
+          <>
+            <p role="alert">{codexProblem.message}</p>
+            <p>
+              Fix: <code>{codexProblem.fix}</code>
+            </p>
+            <button type="button" onClick={onRetryCodex}>
+              Retry Codex
+            </button>
+          </>
+        ) : openAiAccount.signedIn ? (
           <>
             <p>Signed in with {openAiAccount.label}</p>
             <button type="button" onClick={() => void api.authLogout().then(onAccountsChanged, (error: unknown) => setFailure(messageOf(error)))}>

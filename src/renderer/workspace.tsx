@@ -7,6 +7,7 @@ import type { Layout } from "../shared/layout";
 import { firstChoice, type ModelChoice, type ModelOption } from "../shared/models";
 import type { ThreadId, TurnId } from "../shared/provider-events";
 import { PROVIDER_IDS, PROVIDER_NAMES, type ProviderId } from "../shared/provider-id";
+import type { StartupErrorInfo } from "../shared/startup-error";
 import { messagesAfterTurn, type ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
 import { BUSY_HINT, Composer, type ComposerPickers, type SendMode } from "./components/Composer";
@@ -47,6 +48,9 @@ export type WorkspaceProps = Readonly<{
   /** A provider reported that its account changed, such as an expired Claude sign-in; the window reads the accounts again. */
   onAccountChanged: () => void;
   voice: VoiceEnvironment;
+  /** Why Codex cannot be used, or null; the sidebar shows it with a Retry. */
+  codexProblem: StartupErrorInfo | null;
+  onRetryCodex: () => void;
 }>;
 
 const NEW_CHAT_TITLE = "New chat";
@@ -71,7 +75,7 @@ function readSetting(setting: ReadAloudSetting): Readonly<{ isOn: boolean; error
   }
 }
 
-export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged, voice }: WorkspaceProps): ReactElement {
+export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged, voice, codexProblem, onRetryCodex }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
   const recorder = useMemo(() => new LatencyRecorder({ sink: (record) => api.metricsAppend(record), now: monotonicClock, wallClock: () => new Date() }), [api]);
@@ -381,6 +385,8 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
     <main className="app" aria-label="Margin">
       <Sidebar
         threads={threads}
+        codexProblem={codexProblem}
+        onRetryCodex={onRetryCodex}
         onManageAccounts={onManageAccounts}
         readAloud={{
           isOn: readAloudOn,

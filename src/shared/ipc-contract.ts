@@ -12,6 +12,7 @@ import type { DisplayMessage, ThreadSummary } from "./thread-history";
 
 export const IPC_CHANNELS = {
   startupStatus: "startup:status",
+  codexRetry: "codex:retry",
   copyText: "clipboard:copy",
   accountRead: "account:read",
   authStart: "auth:start",
@@ -43,10 +44,13 @@ export const IPC_CHANNELS = {
   fault: "startup:fault",
 } as const;
 
+/** `ok: false` means Codex is not usable; Claude chats are unaffected, and the window shows the error beside the chats with a Retry. */
 export type StartupStatus = Readonly<{ ok: true; codexVersion: string }> | Readonly<{ ok: false; error: StartupErrorInfo }>;
 
 export type MarginApi = Readonly<{
   startupStatus(): Promise<StartupStatus>;
+  /** Stops the Codex app-server, if one runs, and starts a new one; resolves with the new status instead of rejecting. */
+  codexRetry(): Promise<StartupStatus>;
   copyText(text: string): Promise<void>;
   /** The signed-in state of `provider`; it carries a label such as "ChatGPT Plus", never a key, a token or an email. */
   accountRead(provider: ProviderId): Promise<ProviderAccount>;
@@ -93,7 +97,7 @@ export type MarginApi = Readonly<{
   turnInterrupt(provider: ProviderId, threadId: ThreadId, turnId: TurnId): Promise<void>;
   /** Appends one latency record (numbers only) to metrics.jsonl in Margin's application support folder. */
   metricsAppend(record: LatencyRecord): Promise<void>;
-  /** A problem found after start-up that the window must show in full. */
+  /** A Codex problem found after start-up; the window shows it with Retry and keeps Claude chats working. */
   onFault(handler: (info: StartupErrorInfo) => void): () => void;
   onProviderEvent(handler: (event: ProviderEvent) => void): () => void;
 }>;

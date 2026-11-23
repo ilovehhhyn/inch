@@ -45,11 +45,20 @@ export class FakeMarginApi implements MarginApi {
   private readonly faultHandlers = new Set<(info: StartupErrorInfo) => void>();
   private readonly providerHandlers = new Set<(event: ProviderEvent) => void>();
 
+  /** What `codexRetry` reports next, and becomes the startup status. */
+  retryResult: StartupStatus = { ok: true, codexVersion: "0.146.0" };
+  readonly accountReads: Array<ProviderId> = [];
   startupStatus = async (): Promise<StartupStatus> => this.startup;
+  codexRetry = async (): Promise<StartupStatus> => {
+    this.calls.push("codexRetry");
+    this.startup = this.retryResult;
+    return this.retryResult;
+  };
   copyText = async (): Promise<void> => undefined;
   /** The Claude account; the OpenAI one is `account`. */
   claudeAccount: ProviderAccount = { provider: "claude", signedIn: false, label: null };
   accountRead = async (provider: ProviderId): Promise<ProviderAccount> => {
+    this.accountReads.push(provider);
     if (provider === "claude") return this.claudeAccount;
     return { provider: "codex", signedIn: this.account.signedIn, label: this.account.signedIn ? "ChatGPT Plus" : null };
   };

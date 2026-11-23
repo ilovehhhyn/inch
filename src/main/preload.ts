@@ -8,6 +8,7 @@ import { IPC_CHANNELS, type MarginApi } from "../shared/ipc-contract";
 
 const api: MarginApi = {
   startupStatus: () => ipcRenderer.invoke(IPC_CHANNELS.startupStatus),
+  codexRetry: () => ipcRenderer.invoke(IPC_CHANNELS.codexRetry),
   copyText: (text) => ipcRenderer.invoke(IPC_CHANNELS.copyText, text),
   accountRead: (provider) => ipcRenderer.invoke(IPC_CHANNELS.accountRead, provider),
   authStart: (kind) => ipcRenderer.invoke(IPC_CHANNELS.authStart, kind),

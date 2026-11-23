@@ -22,6 +22,8 @@ test("a_chat_that_cannot_be_read_shows_its_problem_in_a_row_that_does_not_open",
       onSelect={(id) => selected.push(id)}
       onNewChat={() => undefined}
       onManageAccounts={() => undefined}
+      codexProblem={null}
+      onRetryCodex={() => undefined}
       readAloud={{ isOn: false, onChange: () => undefined }}
     />,
   );
@@ -44,6 +46,8 @@ test("the_sidebar_lists_every_chat_marks_the_open_one_and_reports_clicks", async
         newChats += 1;
       }}
       onManageAccounts={() => undefined}
+      codexProblem={null}
+      onRetryCodex={() => undefined}
       readAloud={{ isOn: false, onChange: () => undefined }}
     />,
   );

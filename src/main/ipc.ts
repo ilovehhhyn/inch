@@ -16,6 +16,7 @@ import { parseAttachmentFile, parseAttachmentIds, parseModelChoice, parseScreenC
 
 export type IpcHandlers = Readonly<{
   startupStatus: () => Promise<StartupStatus>;
+  codexRetry: () => Promise<StartupStatus>;
   accountRead: (provider: ProviderId) => Promise<ProviderAccount>;
   authStart: (kind: LoginKind) => Promise<LoginStarted>;
   authApiKey: (apiKey: string) => Promise<void>;
@@ -50,6 +51,7 @@ function requireString(value: unknown, name: string): string {
 
 export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.startupStatus, () => handlers.startupStatus());
+  ipcMain.handle(IPC_CHANNELS.codexRetry, () => handlers.codexRetry());
   ipcMain.handle(IPC_CHANNELS.copyText, (_event, text: unknown) => {
     clipboard.writeText(requireString(text, "text"));
   });

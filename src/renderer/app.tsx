@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import type { ProviderAccount } from "../shared/chat-provider";
-import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
+import type { MarginApi } from "../shared/ipc-contract";
+import type { StartupErrorInfo } from "../shared/startup-error";
 import { PROVIDER_IDS, type ProviderId } from "../shared/provider-id";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
@@ -23,44 +24,70 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function crashStatus(error: unknown): StartupStatus {
-  return { ok: false, error: { kind: "codex-crashed", message: `Margin could not check Codex: ${messageOf(error)}`, fix: "Restart Margin" } };
+/** A failed startup check, or a failed read of the Claude account: the window cannot tell what is signed in, so it shows the error in full. */
+function fatalError(error: unknown, what: string): StartupErrorInfo {
+  return { kind: "codex-crashed", message: `Margin could not check ${what}: ${messageOf(error)}`, fix: "Restart Margin" };
 }
 
+/** A Codex failure that is not a start-up error, such as a restarted app-server that did not come back. */
+function codexError(error: unknown): StartupErrorInfo {
+  return { kind: "codex-crashed", message: messageOf(error), fix: "Press Retry, or restart Margin" };
+}
+
+const CODEX_SIGNED_OUT: ProviderAccount = { provider: "codex", signedIn: false, label: null };
+
 export function App({ api, voice: injectedVoice }: AppProps): ReactElement | null {
-  const [status, setStatus] = useState<StartupStatus | null>(null);
+  const [isStarted, setStarted] = useState(false);
+  const [fatal, setFatal] = useState<StartupErrorInfo | null>(null);
+  /** Why Codex cannot be used now; Claude chats keep working while it is set. */
+  const [codexProblem, setCodexProblem] = useState<StartupErrorInfo | null>(null);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
   const [isManagingAccounts, setManagingAccounts] = useState(false);
   const [draft, setDraft] = useState("");
   const [voice] = useState<VoiceEnvironment>(() => injectedVoice ?? createBrowserVoice());
 
   useEffect(() => {
-    api.startupStatus().then(setStatus, (error: unknown) => setStatus(crashStatus(error)));
+    api.startupStatus().then(
+      (status) => {
+        setCodexProblem(status.ok ? null : status.error);
+        setStarted(true);
+      },
+      (error: unknown) => setFatal(fatalError(error, "Margin's start-up")),
+    );
   }, [api]);
 
-  useEffect(() => api.onFault((error) => setStatus({ ok: false, error })), [api]);
+  useEffect(() => api.onFault(setCodexProblem), [api]);
+
+  const retryCodex = useCallback((): void => {
+    api.codexRetry().then(
+      (status) => setCodexProblem(status.ok ? null : status.error),
+      (error: unknown) => setCodexProblem(codexError(error)),
+    );
+  }, [api]);
 
   const readAccounts = useCallback((): void => {
-    Promise.all([api.accountRead("codex"), api.accountRead("claude")]).then(([codex, claude]) => setAccounts({ codex, claude }), (error: unknown) => setStatus(crashStatus(error)));
-  }, [api]);
+    const codex = codexProblem === null ? api.accountRead("codex").catch((error: unknown) => {
+      setCodexProblem(codexError(error));
+      return CODEX_SIGNED_OUT;
+    }) : Promise.resolve(CODEX_SIGNED_OUT);
+    Promise.all([codex, api.accountRead("claude")]).then(([codexAccount, claude]) => setAccounts({ codex: codexAccount, claude }), (error: unknown) => setFatal(fatalError(error, "Claude")));
+  }, [api, codexProblem]);
 
-  const isReady = status?.ok === true;
   useEffect(() => {
-    if (!isReady) return undefined;
+    if (!isStarted) return undefined;
     readAccounts();
     return api.onAuthChanged((event) => {
       const isAccountChange = event.type === "account" || (event.type === "loginCompleted" && event.success);
       if (isAccountChange) readAccounts();
     });
-  }, [api, isReady, readAccounts]);
+  }, [api, isStarted, readAccounts]);
 
-  if (status === null) return null;
-  if (!status.ok) return <StartupError error={status.error} copyText={api.copyText} />;
-  if (accounts === null) return null;
+  if (fatal !== null) return <StartupError error={fatal} copyText={api.copyText} />;
+  if (!isStarted || accounts === null) return null;
   const isSignedInAnywhere = accounts.codex.signedIn || accounts.claude.signedIn;
   if (!isSignedInAnywhere || isManagingAccounts) {
-    return <SignIn api={api} accounts={accounts} onAccountsChanged={readAccounts} {...(isSignedInAnywhere ? { onClose: () => setManagingAccounts(false) } : {})} />;
+    return <SignIn api={api} accounts={accounts} codexProblem={codexProblem} onRetryCodex={retryCodex} onAccountsChanged={readAccounts} {...(isSignedInAnywhere ? { onClose: () => setManagingAccounts(false) } : {})} />;
   }
   const providers = PROVIDER_IDS.filter((id) => accounts[id].signedIn);
-  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} providers={providers} onAccountChanged={readAccounts} voice={voice} />;
+  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} providers={providers} onAccountChanged={readAccounts} voice={voice} codexProblem={codexProblem} onRetryCodex={retryCodex} />;
 }

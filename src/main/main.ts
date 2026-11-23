@@ -10,6 +10,7 @@ import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
 import type { ChatProvider } from "../shared/chat-provider";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
+import type { ThreadSummary } from "../shared/thread-history";
 import type { ProviderEvent } from "../shared/provider-events";
 import type { ProviderId } from "../shared/provider-id";
 import { StartupError, type StartupErrorInfo } from "../shared/startup-error";
@@ -180,22 +181,66 @@ async function startCodex(): Promise<StartedCodex> {
   return { supervisor, codexVersion: located.version };
 }
 
-function registerHandlers(started: Promise<StartedCodex>): void {
+function requireStarting(): Promise<StartedCodex> {
+  if (starting === undefined) throw new Error("Codex has not started; wait for the window to finish starting");
+  return starting;
+}
+
+/** Starts Codex and remembers the attempt; a failure is not thrown here, because `codexStatus` reports it to the window beside the working Claude chats. */
+function beginCodexStart(): void {
+  const started = startCodex();
+  starting = started;
+  started.catch(() => undefined);
+}
+
+/** `ok: false` when Codex cannot be used; it never rejects for that, because a Codex problem must not stop Claude. */
+async function codexStatus(): Promise<StartupStatus> {
+  try {
+    return { ok: true, codexVersion: (await requireStarting()).codexVersion };
+  } catch (error) {
+    if (error instanceof StartupError) return { ok: false, error: error.info };
+    return { ok: false, error: { kind: "codex-crashed", message: error instanceof Error ? error.message : String(error), fix: "Press Retry, or restart Margin" } };
+  }
+}
+
+let restarting: Promise<StartupStatus> | undefined;
+
+/** Stops the current Codex session, if it started, and starts a new one; calls made while one restart runs share it. */
+function restartCodex(): Promise<StartupStatus> {
+  restarting ??= (async () => {
+    try {
+      const previous = starting;
+      await previous?.then(({ supervisor }) => supervisor.stop(), () => undefined); // a failed start has no child to stop
+      beginCodexStart();
+      return await codexStatus();
+    } finally {
+      restarting = undefined;
+    }
+  })();
+  return restarting;
+}
+
+/** The chats of every provider; a provider that fails is logged and left out, so one provider's problem never empties the other's list. */
+async function listAllThreads(): Promise<ReadonlyArray<ThreadSummary>> {
+  const results = await Promise.allSettled(Object.entries(providers).map(async ([id, provider]) => ({ id, threads: await provider.listThreads() })));
+  const lists = results.flatMap((result) => {
+    if (result.status === "fulfilled") return [result.value.threads];
+    log(`could not list chats: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+    return [];
+  });
+  return lists.flat().sort((left, right) => right.updatedAtSec - left.updatedAtSec);
+}
+
+function registerHandlers(): void {
   const choices = createChoiceStore(choicesPath());
   const attachments = createAttachmentStore({ directory: attachmentsDirectory() });
   const startTurn = createTurnStarter({ providerFor, choices, attachments });
   /** The running Codex client; a request made during a restart waits for it instead of failing. */
-  const readyClient = async () => (await started).supervisor.ready();
+  const readyClient = async () => (await requireStarting()).supervisor.ready();
   for (const provider of Object.values(providers)) provider.onEvent(sendProviderEvent);
   registerIpc({
-    startupStatus: async (): Promise<StartupStatus> => {
-      try {
-        return { ok: true, codexVersion: (await started).codexVersion };
-      } catch (error) {
-        if (error instanceof StartupError) return { ok: false, error: error.info };
-        throw error;
-      }
-    },
+    startupStatus: codexStatus,
+    codexRetry: restartCodex,
     accountRead: (provider) => providerFor(provider).readAccount(),
     authStart: async (kind) => (await readyClient()).startLogin(kind),
     authApiKey: async (apiKey) => (await readyClient()).startApiKeyLogin(apiKey),
@@ -215,7 +260,7 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     attachmentDiscard: (id) => attachments.discard(id),
     threadStart: (provider) => providerFor(provider).startThread(),
     threadOpen: (provider, threadId) => providerFor(provider).readThread(threadId),
-    threadList: async () => (await Promise.all(Object.values(providers).map((provider) => provider.listThreads()))).flat().sort((left, right) => right.updatedAtSec - left.updatedAtSec),
+    threadList: listAllThreads,
     threadFork: (provider, threadId, lastTurnId) => providerFor(provider).forkThread(threadId, lastTurnId),
     chooseDiffFolder: async () => {
       const window = BrowserWindow.getFocusedWindow();
@@ -249,10 +294,8 @@ void app.whenReady().then(async () => {
     content: attachmentContent,
     onCredentialRejected: () => claude?.markRejected(),
   });
-  const started = startCodex();
-  starting = started;
-  started.catch(() => undefined); // not silent: startupStatus reports the failure to the window
-  registerHandlers(started);
+  beginCodexStart();
+  registerHandlers();
   createWindow();
   speech.warmUp().then(
     () => log("voice warm-up finished"),
