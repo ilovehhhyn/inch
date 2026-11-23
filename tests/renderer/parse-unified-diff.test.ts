@@ -108,3 +108,28 @@ test("a_hunk_that_ends_early_is_rejected_with_its_header", () => {
 
   expect(() => parseUnifiedDiff(diff)).toThrow(/hunk `@@ -1,3 \+1,3 @@` of a\.txt ended early/);
 });
+
+test("quoted_paths_with_octal_escapes_are_decoded", () => {
+  const diff = [
+    'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"',
+    'index 1111111..2222222 100644',
+    '--- "a/caf\\303\\251.py"',
+    '+++ "b/caf\\303\\251.py"',
+    "@@ -1 +1 @@",
+    "-one",
+    "+two",
+    'diff --git "a/tab\\there.py" "b/tab\\there.py"',
+    'rename from "old\\"q.py"',
+    'rename to "new\\\\q.py"',
+  ].join("\n");
+
+  const rows = parseUnifiedDiff(diff);
+
+  expect(rows.filter((row) => row.kind === "file").map((row) => row.file)).toEqual(["café.py", "new\\q.py"]);
+  expect(rows.find((row) => row.kind === "add")?.file).toBe("café.py");
+  expect(rows.at(-1)?.text).toBe('old"q.py → new\\q.py');
+});
+
+test("a_quoted_header_with_an_unterminated_quote_is_rejected", () => {
+  expect(() => parseUnifiedDiff('diff --git "a/x b/x')).toThrow(/diff header .* is not in/);
+});

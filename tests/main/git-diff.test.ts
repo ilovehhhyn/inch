@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 
+import { parseUnifiedDiff } from "../../src/renderer/diff/parse-unified-diff";
 import { DIFF_READ_LIMIT_BYTES, DIFF_TIMEOUT_MS, runGitDiff, type ExecFile } from "../../src/main/git-diff";
 
 const run = promisify(nodeExecFile);
@@ -24,7 +25,7 @@ function recording(result: Readonly<{ stdout: string; stderr: string }>): { exec
   };
 }
 
-test("head_runs_git_diff_in_the_folder_with_the_fixed_arguments_and_an_explicit_environment", async () => {
+test("head_runs_git_diff_against_head_with_fixed_arguments_and_an_explicit_environment", async () => {
   const { exec, calls } = recording({ stdout: "diff text", stderr: "" });
 
   const text = await runGitDiff({ folder: FOLDER, base: "HEAD", exec });
@@ -32,7 +33,7 @@ test("head_runs_git_diff_in_the_folder_with_the_fixed_arguments_and_an_explicit_
   expect(text).toBe("diff text");
   expect(calls).toHaveLength(1);
   expect(calls[0]?.file).toBe("git");
-  expect(calls[0]?.args).toEqual(["-c", "core.fsmonitor=false", "-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U3"]);
+  expect(calls[0]?.args).toEqual(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3", "HEAD"]);
   expect(calls[0]?.options.timeout).toBe(DIFF_TIMEOUT_MS);
   expect(calls[0]?.options.maxBuffer).toBe(DIFF_READ_LIMIT_BYTES);
   expect(Object.keys(calls[0]?.options.env ?? {}).sort()).toEqual(["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "LC_ALL", "PATH"]);
@@ -45,7 +46,7 @@ test("staged_adds_the_staged_flag_and_nothing_else", async () => {
   await runGitDiff({ folder: FOLDER, base: "staged", exec });
 
   expect(calls[0]?.args.slice(-2)).toEqual(["-U3", "--staged"]);
-  expect(calls[0]?.args).toHaveLength(10);
+  expect(calls[0]?.args).not.toContain("HEAD");
 });
 
 test("git_failure_message_names_the_folder", async () => {
@@ -78,6 +79,41 @@ test("a_relative_folder_is_rejected_before_git_runs", async () => {
   await expect(runGitDiff({ folder: "repo", base: "HEAD", exec })).rejects.toThrow(/folder must be an absolute path, got `repo`/);
 
   expect(calls).toEqual([]);
+});
+
+test("a_staged_change_and_an_unstaged_change_both_appear_against_head", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "margin-git-"));
+  const git = (...args: Array<string>) => run("git", ["-C", folder, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args]);
+  await git("init", "-q");
+  await writeFile(join(folder, "a.txt"), "one\n");
+  await writeFile(join(folder, "b.txt"), "one\n");
+  await git("add", ".");
+  await git("commit", "-q", "-m", "first");
+  await writeFile(join(folder, "a.txt"), "staged\n");
+  await git("add", "a.txt");
+  await writeFile(join(folder, "b.txt"), "unstaged\n");
+
+  const text = await runGitDiff({ folder, base: "HEAD" });
+
+  expect(text).toContain("+staged");
+  expect(text).toContain("+unstaged");
+});
+
+test("user_git_settings_for_prefixes_and_quoting_do_not_change_the_header_form", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "margin-git-"));
+  const git = (...args: Array<string>) => run("git", ["-C", folder, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args]);
+  await git("init", "-q");
+  await git("config", "diff.noprefix", "true");
+  await git("config", "core.quotePath", "true");
+  await writeFile(join(folder, "café.py"), "one\n");
+  await git("add", ".");
+  await git("commit", "-q", "-m", "first");
+  await writeFile(join(folder, "café.py"), "two\n");
+
+  const text = await runGitDiff({ folder, base: "HEAD" });
+
+  expect(text).toContain("diff --git a/café.py b/café.py");
+  expect(parseUnifiedDiff(text).find((row) => row.kind === "add")?.file).toBe("café.py");
 });
 
 test("a_real_repository_gives_a_diff_with_the_changed_line", async () => {

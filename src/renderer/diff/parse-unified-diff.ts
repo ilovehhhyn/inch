@@ -12,22 +12,74 @@ const DIFF_START = "diff --git ";
 const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const NO_NEWLINE_MARKER = "\\";
 
-/** Splits `a/<path> b/<path>`; when both paths are equal the split is exact even if the path contains spaces. */
+const SIMPLE_ESCAPES: Readonly<Record<string, string>> = { a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v", '"': '"', "\\": "\\" };
+
+/** Reads a git C-style quoted path starting at `from` (a double quote); returns the path and the index after the closing quote, or null when unterminated. */
+function readQuoted(text: string, from: number): Readonly<{ path: string; end: number }> | null {
+  const bytes: Array<number> = [];
+  const encoder = new TextEncoder();
+  let index = from + 1;
+  while (index < text.length) {
+    const char = text[index] ?? "";
+    if (char === '"') return { path: new TextDecoder().decode(Uint8Array.from(bytes)), end: index + 1 };
+    const octal = /^[0-7]{3}/.exec(text.slice(index + 1, index + 4));
+    if (char === "\\" && octal !== null) {
+      bytes.push(Number.parseInt(octal[0], 8));
+      index += 4;
+    } else if (char === "\\") {
+      const escaped = SIMPLE_ESCAPES[text[index + 1] ?? ""];
+      if (escaped === undefined) return null;
+      bytes.push(...encoder.encode(escaped));
+      index += 2;
+    } else {
+      bytes.push(...encoder.encode(char));
+      index += 1;
+    }
+  }
+  return null;
+}
+
+function unquotedOrQuoted(text: string): string | null {
+  if (!text.startsWith('"')) return text;
+  const quoted = readQuoted(text, 0);
+  return quoted === null || quoted.end !== text.length ? null : quoted.path;
+}
+
+function headerError(line: string): Error {
+  return new Error(`diff header ${JSON.stringify(line.slice(0, 80))} is not in \`diff --git a/<path> b/<path>\` form; run git with \`--no-ext-diff\` and without \`--word-diff\``);
+}
+
+/** The new path of a `diff --git` line. Quoted paths are decoded; when both paths are equal and unquoted the split is exact even if the path contains spaces. */
 function pathsOfDiffLine(line: string): string {
   const rest = line.slice(DIFF_START.length);
+  const quotedFirst = rest.startsWith('"') ? readQuoted(rest, 0) : null;
+  const secondStart = quotedFirst === null ? rest.indexOf(' "') + 1 : quotedFirst.end + 1;
+  if (rest.startsWith('"') || secondStart > 0) {
+    const second = unquotedOrQuoted(rest.slice(secondStart));
+    if (second === null || (rest.startsWith('"') && quotedFirst === null)) throw headerError(line);
+    return second.replace(/^b\//, "");
+  }
   const length = (rest.length - 5) / 2;
   if (Number.isInteger(length) && length > 0) {
     const path = rest.slice(2, 2 + length);
     if (rest === `a/${path} b/${path}`) return path;
   }
   const match = /^a\/(.+) b\/(.+)$/.exec(rest);
-  if (match === null) throw new Error(`diff header ${JSON.stringify(line.slice(0, 80))} is not in \`diff --git a/<path> b/<path>\` form; run git with \`--no-ext-diff\` and without \`--word-diff\``);
+  if (match === null) throw headerError(line);
   return match[2] ?? "";
 }
 
 function pathOfMarker(line: string, prefix: string): string | null {
-  const text = line.slice(prefix.length).split("\t")[0] ?? "";
+  const token = line.slice(prefix.length);
+  const text = token.startsWith('"') ? unquotedOrQuoted(token) : (token.split("\t")[0] ?? "");
+  if (text === null) throw headerError(line);
   return text === "/dev/null" ? null : text.replace(/^[ab]\//, "");
+}
+
+function pathOfRename(line: string, prefix: string): string {
+  const path = unquotedOrQuoted(line.slice(prefix.length));
+  if (path === null) throw headerError(line);
+  return path;
 }
 
 type Cursor = { file: string; fileRow: number; oldPath: string | null; renamedFrom: string | null; header: string; oldLeft: number; newLeft: number; newLine: number };
@@ -81,9 +133,9 @@ export function parseUnifiedDiff(text: string): ReadonlyArray<DiffRow> {
     else if (line.startsWith("+++ ")) {
       cursor.file = pathOfMarker(line, "+++ ") ?? cursor.oldPath ?? cursor.file;
       setFileRow(cursor, cursor.file);
-    } else if (line.startsWith("rename from ")) cursor.renamedFrom = line.slice("rename from ".length);
+    } else if (line.startsWith("rename from ")) cursor.renamedFrom = pathOfRename(line, "rename from ");
     else if (line.startsWith("rename to ")) {
-      cursor.file = line.slice("rename to ".length);
+      cursor.file = pathOfRename(line, "rename to ");
       setFileRow(cursor, `${cursor.renamedFrom ?? "?"} → ${cursor.file}`);
     } else if (line.startsWith("Binary files ")) setFileRow(cursor, `${cursor.file} (binary)`);
   }

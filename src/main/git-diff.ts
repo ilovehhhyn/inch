@@ -22,12 +22,13 @@ export type DiffBase = "HEAD" | "staged";
 export type GitDiffOptions = Readonly<{ folder: string; base: DiffBase; exec?: ExecFile }>;
 
 /**
- * "HEAD" is the working tree against the index, as plain `git diff`; "staged" adds `--staged`. `core.fsmonitor=false`
- * and `--no-textconv` stop a repository's own configuration from starting programs (spec rule 9).
+ * "HEAD" is `git diff HEAD`: staged and unstaged changes together. "staged" is `git diff --staged`. `core.fsmonitor=false`
+ * and `--no-textconv` stop a repository's own configuration from starting programs (spec rule 9); the explicit prefixes
+ * and `core.quotePath=false` keep the header form the parser reads whatever `diff.noprefix` or `diff.mnemonicPrefix` the user set.
  */
 function gitArguments(folder: string, base: DiffBase): Array<string> {
-  const args = ["-c", "core.fsmonitor=false", "-C", folder, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U3"];
-  return base === "staged" ? [...args, "--staged"] : args;
+  const args = ["-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-C", folder, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3"];
+  return [...args, base === "staged" ? "--staged" : "HEAD"];
 }
 
 function failure(folder: string, error: unknown): Error {
