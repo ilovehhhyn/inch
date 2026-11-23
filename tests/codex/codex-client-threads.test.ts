@@ -445,3 +445,25 @@ test("the_client_getter_throws_while_the_supervisor_has_not_started", () => {
 
   expect(() => supervisor.client).toThrow(/Codex is not running; the app-server has not started or is restarting/);
 });
+
+test("list_follows_next_cursor_until_the_last_page", async () => {
+  const { fake, client, sent } = await setup();
+  fake.respond("thread/list", (params) => {
+    const cursor = (params as { cursor?: string | null }).cursor ?? null;
+    return cursor === null ? { data: [{ id: "a", forkedFromId: null }], nextCursor: "c1", backwardsCursor: null } : { data: [{ id: "b", forkedFromId: null }], nextCursor: null, backwardsCursor: null };
+  });
+  fake.respond("thread/read", (params) => ({ thread: { id: (params as { threadId: string }).threadId, forkedFromId: null, turns: [] } }));
+
+  const threads = await client.listThreads();
+
+  expect(threads.map((thread) => thread.id)).toEqual(["a", "b"]);
+  const lists = sent().filter((message) => message.method === "thread/list");
+  expect(lists.map((message) => message.params)).toEqual([{ cwd: EMPTY_WORKSPACE }, { cwd: EMPTY_WORKSPACE, cursor: "c1" }]);
+});
+
+test("a_list_that_never_ends_is_a_hard_error_naming_the_limit", async () => {
+  const { fake, client } = await setup();
+  fake.respond("thread/list", { data: [], nextCursor: "again", backwardsCursor: null });
+
+  await expect(client.listThreads()).rejects.toThrow(/thread\/list returned more than 50 pages/);
+});

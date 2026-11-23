@@ -12,6 +12,7 @@ import type { GetAccountResponse } from "./generated/v2/GetAccountResponse";
 import type { InitializeResponse } from "./generated/InitializeResponse";
 import { buildMcpDisableConfig } from "./mcp-overrides";
 import type { Thread } from "./generated/v2/Thread";
+import type { ThreadListResponse } from "./generated/v2/ThreadListResponse";
 import type { RpcConnection } from "./rpc-connection";
 import type { JsonValue, Unsubscribe } from "./rpc-types";
 
@@ -20,6 +21,9 @@ const CLIENT_TITLE = "Margin";
 const UNSUPPORTED_ACCOUNT_FIX = "sign out of Codex and sign in with ChatGPT or an OpenAI API key";
 
 /** The turn separator: two text inputs are stored joined with no separator, so the context item ends with a blank line. */
+/** A bound on pages of `thread/list`, so a server that never ends the list cannot loop the client. */
+const MAX_LIST_PAGES = 50;
+
 const CONTEXT_SEPARATOR = "\n\n";
 
 export const MARGIN_INSTRUCTIONS =
@@ -288,8 +292,16 @@ export class CodexClient {
    * parent never changes.
    */
   async listThreads(): Promise<Array<Thread>> {
-    const response = await this.connection.request("thread/list", { cwd: this.emptyWorkspacePath });
-    return Promise.all(response.data.map(async (thread) => ({ ...thread, forkedFromId: await this.forkParentOf(thread) })));
+    const listed: Array<Thread> = [];
+    let cursor: string | null = null;
+    for (let page = 0; ; page++) {
+      if (page === MAX_LIST_PAGES) throw new Error(`thread/list returned more than ${MAX_LIST_PAGES} pages; the app-server did not end the list, so update Codex or Margin`);
+      const response: ThreadListResponse = await this.connection.request("thread/list", cursor === null ? { cwd: this.emptyWorkspacePath } : { cwd: this.emptyWorkspacePath, cursor });
+      listed.push(...response.data);
+      cursor = response.nextCursor;
+      if (cursor === null) break;
+    }
+    return Promise.all(listed.map(async (thread) => ({ ...thread, forkedFromId: await this.forkParentOf(thread) })));
   }
 
   private async forkParentOf(thread: Thread): Promise<string | null> {
