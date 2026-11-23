@@ -5,7 +5,7 @@ export type ContextBlock = Readonly<{ text: string; label: string }>;
 /** Positions are not part of the text form, so a parsed block carries only its text and label. */
 export type ScreenContext = Readonly<{ paneKind: "chat" | "diff"; paneTitle: string; blocks: ReadonlyArray<ContextBlock> }>;
 
-const HEADER_LINE = "MARGIN SCREEN CONTEXT v1";
+export const CONTEXT_HEADER_LINE = "MARGIN SCREEN CONTEXT v1";
 const END_LINE = "END MARGIN SCREEN CONTEXT";
 const BLOCK_PREFIX = "--- ";
 const PANE_PREFIX = "pane: ";
@@ -40,7 +40,7 @@ export function blockChars(block: ContextBlock): number {
 
 export function renderContextBlock(context: ScreenContext): string {
   requireOneLine(context.paneTitle, "pane title");
-  return [HEADER_LINE, `${PANE_PREFIX}${context.paneKind}${TITLE_SEPARATOR}${context.paneTitle}`, ...context.blocks.flatMap(blockLines), END_LINE].join("\n");
+  return [CONTEXT_HEADER_LINE, `${PANE_PREFIX}${context.paneKind}${TITLE_SEPARATOR}${context.paneTitle}`, ...context.blocks.flatMap(blockLines), END_LINE].join("\n");
 }
 
 function parseBlocks(lines: ReadonlyArray<string>): Array<ContextBlock> | null {
@@ -58,7 +58,7 @@ export function splitContextBlock(text: string): Readonly<{ context: ScreenConte
   const lines = text.split("\n");
   const paneMatch = PANE_LINE.exec(lines[1] ?? "");
   const endIndex = lines.indexOf(END_LINE);
-  if (lines[0] !== HEADER_LINE || paneMatch === null || endIndex < 2) return null;
+  if (lines[0] !== CONTEXT_HEADER_LINE || paneMatch === null || endIndex < 2) return null;
   const blocks = parseBlocks(lines.slice(2, endIndex));
   if (blocks === null) return null;
   const paneKind = paneMatch[1] === "chat" ? "chat" : "diff";

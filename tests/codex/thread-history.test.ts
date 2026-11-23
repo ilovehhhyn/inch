@@ -2,6 +2,7 @@
 import { expect, test } from "vitest";
 
 import { summarizeThread, toHistory } from "../../src/codex/thread-history";
+import { renderContextBlock } from "../../src/shared/context-format";
 import type { Thread } from "../../src/codex/generated/v2/Thread";
 import type { ThreadItem } from "../../src/codex/generated/v2/ThreadItem";
 import type { Turn } from "../../src/codex/generated/v2/Turn";
@@ -60,4 +61,26 @@ test("the_title_is_the_thread_name_or_the_first_line_of_the_preview_and_never_em
   expect(summarizeThread(thread([], { preview: "   " })).title).toBe("New chat");
   expect(summarizeThread(thread([], { preview: "x".repeat(200) })).title).toHaveLength(60);
   expect(summarizeThread(thread([], { id: "t9", updatedAt: 7 }))).toMatchObject({ id: "t9", updatedAtSec: 7 });
+});
+
+const CONTEXT = renderContextBlock({ paneKind: "chat", paneTitle: "Plan", blocks: [{ label: "message 2 (assistant)", text: "Warm up for 500 steps." }] });
+
+test("reloaded_thread_hides_the_context_item", () => {
+  const stored = turn("t1", "completed", [userItem(`${CONTEXT}\n\n`, "why 500?"), answerItem("It is 5% of training.")]);
+
+  const history = toHistory(thread([stored]));
+
+  expect(history.map((message) => message.text)).toEqual(["why 500?", "It is 5% of training."]);
+  expect(JSON.stringify(history)).not.toContain("MARGIN SCREEN CONTEXT");
+});
+
+test("a_user_message_that_merely_mentions_the_marker_is_shown_unchanged", () => {
+  const history = toHistory(thread([turn("t1", "completed", [userItem("what does MARGIN SCREEN CONTEXT v1 mean?"), answerItem("a")])]));
+
+  expect(history[0]?.text).toBe("what does MARGIN SCREEN CONTEXT v1 mean?");
+});
+
+test("the_chat_list_title_skips_the_context_block_and_never_shows_a_cut_one", () => {
+  expect(summarizeThread(thread([], { preview: `${CONTEXT}\n\nwhy 500?` })).title).toBe("why 500?");
+  expect(summarizeThread(thread([], { preview: CONTEXT.slice(0, 40) })).title).toBe("New chat");
 });

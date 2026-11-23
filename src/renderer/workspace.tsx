@@ -7,7 +7,9 @@ import type { ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
 import { Composer, type SendMode } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
-import { MAIN_PANE_ID } from "./context/pane-id";
+import { captureContext, CAPTURE_BUDGET_MS } from "./context/capture-context";
+import { asPaneId, MAIN_PANE_ID, type PaneId } from "./context/pane-id";
+import { createScrollTracker } from "./context/scroll-tracker";
 import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
 
@@ -17,12 +19,25 @@ export type WorkspaceProps = Readonly<{
   onDraftChange: (draft: string) => void;
 }>;
 
+/** The pane that holds keyboard focus: the nearest ancestor of the focused element that names a pane. */
+function focusedPaneId(): PaneId | null {
+  const id = document.activeElement?.closest("[data-pane-id]")?.getAttribute("data-pane-id");
+  return id === null || id === undefined ? null : asPaneId(id);
+}
+
+const NEW_CHAT_TITLE = "New chat";
+
+function monotonicClock(): number {
+  return performance.now();
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
+  const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
   const [threads, setThreads] = useState<ReadonlyArray<ThreadSummary>>([]);
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -46,17 +61,28 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     else store.reportError(threadId, messageOf(error));
   }
 
+  /** Reads the pane scrolled last (else the focused pane) for Command-I; Enter reads nothing. Either send starts a new scroll window. */
+  function contextFor(mode: SendMode): string | null {
+    const paneId = tracker.choosePane(focusedPaneId());
+    tracker.markMessageSent();
+    if (mode === "plain") return null;
+    if (paneId === null) throw new Error("no pane to read: scroll a pane or click into one, then press Command-I");
+    const capture = captureContext(paneId);
+    if (capture.elapsedMs > CAPTURE_BUDGET_MS) console.warn(`reading ${paneId} took ${capture.elapsedMs.toFixed(1)} ms, over the ${CAPTURE_BUDGET_MS} ms budget`);
+    return capture.text;
+  }
+
   async function send(question: string, mode: SendMode): Promise<void> {
-    if (mode === "withContext") return setProblem("Screen context is not available yet");
     setProblem(null);
     setIsSending(true);
     let threadId = mainThread;
     try {
+      const contextText = contextFor(mode);
       if (threadId === null) {
         threadId = await api.threadStart();
         setMainThread(threadId);
       }
-      const turnId = await api.turnStart(threadId, question, null);
+      const turnId = await api.turnStart(threadId, question, contextText);
       store.begin(threadId, { turnId, question });
     } catch (error) {
       report(threadId, error);
@@ -79,6 +105,8 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     if (mainThread !== null && view.activeTurn !== null) void api.turnInterrupt(mainThread, view.activeTurn).catch((error: unknown) => report(mainThread, error));
   }
 
+  const mainTitle = threads.find((thread) => thread.id === mainThread)?.title ?? NEW_CHAT_TITLE;
+
   return (
     <main className="app" aria-label="Margin">
       <Sidebar
@@ -91,7 +119,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
         }}
       />
       <div className="main-col">
-        <ChatPane paneId={MAIN_PANE_ID} threadId={mainThread} store={store}>
+        <ChatPane paneId={MAIN_PANE_ID} threadId={mainThread} title={mainTitle} store={store} tracker={tracker}>
           {problem === null ? null : <p className="thread-error" role="alert">{problem}</p>}
           <Composer draft={draft} onDraftChange={onDraftChange} onSend={(question, mode) => void send(question, mode)} onInterrupt={interrupt} busy={isSending || view.activeTurn !== null} />
         </ChatPane>

@@ -3,6 +3,9 @@ import { useCallback, useLayoutEffect, useRef, useSyncExternalStore, type ReactE
 
 import type { ThreadId, TurnId } from "../../shared/provider-events";
 import type { PaneId } from "../context/pane-id";
+import { registerPane } from "../context/pane-registry";
+import type { ScrollTracker } from "../context/scroll-tracker";
+import { readVisibleBlocks } from "../context/visible-blocks";
 import type { ThreadStore } from "../state/thread-store";
 import { Message } from "./Message";
 
@@ -12,7 +15,10 @@ export const BOTTOM_TOLERANCE_PX = 24;
 export type ChatPaneProps = Readonly<{
   paneId: PaneId;
   threadId: ThreadId | null;
+  /** Names the pane in the context block, for example the chat's title. */
+  title: string;
   store: ThreadStore;
+  tracker: ScrollTracker;
   onOpenSideChat?: (turnId: TurnId) => void;
   /** The composer of this pane: it sits inside the pane so keyboard focus there names the pane. */
   children?: ReactNode;
@@ -31,7 +37,7 @@ function assignRef(ref: Ref<HTMLDivElement> | undefined, element: HTMLDivElement
 
 const NO_THREAD_VIEW = { messages: [], activeTurn: null, error: null } as const;
 
-export function ChatPane({ paneId, threadId, store, onOpenSideChat, children, ref }: ChatPaneProps): ReactElement {
+export function ChatPane({ paneId, threadId, title, store, tracker, onOpenSideChat, children, ref }: ChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => (threadId === null ? NO_THREAD_VIEW : store.view(threadId)));
   const element = useRef<HTMLDivElement | null>(null);
   const followsBottom = useRef(true);
@@ -42,6 +48,22 @@ export function ChatPane({ paneId, threadId, store, onOpenSideChat, children, re
     },
     [ref],
   );
+
+  const titleRef = useRef(title);
+  useLayoutEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+
+  useLayoutEffect(() => {
+    const container = element.current;
+    if (container === null) throw new Error("the scroll container must be mounted before the pane registers");
+    const unregister = registerPane(paneId, () => readVisibleBlocks(container), "chat", { title: () => titleRef.current, viewportHeight: () => container.getBoundingClientRect().height });
+    const detach = tracker.attach(paneId, container);
+    return () => {
+      detach();
+      unregister();
+    };
+  }, [paneId, tracker]);
 
   useLayoutEffect(() => {
     followsBottom.current = true;

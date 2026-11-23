@@ -6,6 +6,8 @@ import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { HistoryMessage, ThreadSummary } from "../shared/thread-history";
 
+import { parseContextText } from "./ipc-arguments";
+
 export type IpcHandlers = Readonly<{
   startupStatus: () => Promise<StartupStatus>;
   authRead: () => Promise<AccountSummary>;
@@ -25,10 +27,6 @@ function requireString(value: unknown, name: string): string {
   return value;
 }
 
-function requireNullableString(value: unknown, name: string): string | null {
-  return value === null ? null : requireString(value, name);
-}
-
 export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.startupStatus, () => handlers.startupStatus());
   ipcMain.handle(IPC_CHANNELS.copyText, (_event, text: unknown) => {
@@ -43,7 +41,7 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.threadOpen, (_event, threadId: unknown) => handlers.threadOpen(asThreadId(requireString(threadId, "threadId"))));
   ipcMain.handle(IPC_CHANNELS.threadList, () => handlers.threadList());
   ipcMain.handle(IPC_CHANNELS.turnStart, (_event, threadId: unknown, question: unknown, contextText: unknown) =>
-    handlers.turnStart(asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), requireNullableString(contextText, "contextText")),
+    handlers.turnStart(asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), parseContextText(contextText)),
   );
   ipcMain.handle(IPC_CHANNELS.turnInterrupt, (_event, threadId: unknown, turnId: unknown) =>
     handlers.turnInterrupt(asThreadId(requireString(threadId, "threadId")), asTurnId(requireString(turnId, "turnId"))),
