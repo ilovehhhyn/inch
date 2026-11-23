@@ -32,6 +32,7 @@ test("initialize_sends_initialized_after_the_response", async () => {
   const { fake, client } = setup();
   fake.ignore("initialize");
   fake.ignore("initialized");
+  fake.respond("config/read", { config: {} });
 
   const pending = client.initialize();
   await settle();
@@ -39,7 +40,7 @@ test("initialize_sends_initialized_after_the_response", async () => {
   fake.reply(1, INIT_RESULT);
   await pending;
 
-  expect(fake.received().map((message) => message.method)).toEqual(["initialize", "initialized"]);
+  expect(fake.received().map((message) => message.method)).toEqual(["initialize", "initialized", "config/read"]);
   expect(fake.received()[0]?.params).toEqual({
     clientInfo: { name: "margin", title: "Margin", version: "1.2.3" },
     capabilities: { experimentalApi: true, requestAttestation: false },

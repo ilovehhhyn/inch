@@ -9,6 +9,7 @@ import type { ServerNotification } from "./generated/ServerNotification";
 import type { AccountLoginCompletedNotification } from "./generated/v2/AccountLoginCompletedNotification";
 import type { GetAccountResponse } from "./generated/v2/GetAccountResponse";
 import type { InitializeResponse } from "./generated/InitializeResponse";
+import { buildMcpDisableConfig } from "./mcp-overrides";
 import type { Thread } from "./generated/v2/Thread";
 import type { RpcConnection } from "./rpc-connection";
 import type { JsonValue, Unsubscribe } from "./rpc-types";
@@ -40,9 +41,9 @@ export type ThreadDefaults = Readonly<{
 }>;
 
 /** Settings every thread Margin creates, resumes or forks must carry: read-only sandbox, no approvals, Margin's empty directory. */
-export function createThreadDefaults(emptyWorkspacePath: string): ThreadDefaults {
+export function createThreadDefaults(emptyWorkspacePath: string, mcpServers: { readonly [name: string]: JsonValue } = {}): ThreadDefaults {
   if (!isAbsolute(emptyWorkspacePath)) throw new Error(`empty workspace path must be absolute, got \`${emptyWorkspacePath}\`; pass a path under Margin's application support directory`);
-  return { cwd: emptyWorkspacePath, sandbox: "read-only", approvalPolicy: "never", developerInstructions: MARGIN_INSTRUCTIONS, config: SHELL_TOOL_DISABLE, serviceName: "margin" };
+  return { cwd: emptyWorkspacePath, sandbox: "read-only", approvalPolicy: "never", developerInstructions: MARGIN_INSTRUCTIONS, config: { ...SHELL_TOOL_DISABLE, mcp_servers: mcpServers }, serviceName: "margin" };
 }
 
 export type CodexClientOptions = Readonly<{
@@ -114,7 +115,7 @@ export class CodexClient {
   private readonly appVersion: string;
   private readonly openExternal: (url: string) => Promise<void>;
   private readonly log: Logger;
-  private readonly threadDefaults: ThreadDefaults;
+  private threadDefaultsValue: ThreadDefaults | null = null;
   private readonly emptyWorkspacePath: string;
   private readonly resumable = new Set<ThreadId>();
   private readonly turns = new Map<TurnId, ThreadId>();
@@ -125,7 +126,7 @@ export class CodexClient {
     this.openExternal = options.openExternal;
     this.log = options.log;
     this.emptyWorkspacePath = options.emptyWorkspacePath;
-    this.threadDefaults = createThreadDefaults(options.emptyWorkspacePath);
+    createThreadDefaults(options.emptyWorkspacePath); // fails at construction when the path is not absolute
     this.connection.onNotification((notification) => this.trackTurns(notification));
   }
 
@@ -134,7 +135,11 @@ export class CodexClient {
     return [...this.turns].map(([turnId, threadId]) => ({ threadId, turnId }));
   }
 
-  /** Threads that have run a turn: only these have a rollout on disk, so only these can be resumed by a restarted app-server. */
+  /**
+   * Threads that have run a turn. Measured on codex-cli 0.146.0: `thread/resume` of a thread that never ran a turn fails
+   * with "no rollout found", so only these can be resumed by a restarted app-server. A thread without a turn is lost
+   * on a crash; sending to it then fails with a server error.
+   */
   resumableThreads(): Array<ThreadId> {
     return [...this.resumable];
   }
@@ -144,14 +149,30 @@ export class CodexClient {
     if (notification.method === "turn/completed") this.turns.delete(asTurnId(notification.params.turn.id));
   }
 
-  /** Sends `initialize`, then the `initialized` notification only after the response arrives. */
+  /** Sends `initialize`, then `initialized` only after the response, then reads the user's config to find MCP servers to disable. */
   async initialize(): Promise<InitializeResponse> {
     const response = await this.connection.request("initialize", {
       clientInfo: { name: CLIENT_NAME, title: CLIENT_TITLE, version: this.appVersion },
       capabilities: { experimentalApi: true, requestAttestation: false },
     });
     this.connection.notify("initialized");
+    const { config } = await this.connection.request("config/read", { includeLayers: false });
+    this.threadDefaultsValue = createThreadDefaults(this.emptyWorkspacePath, buildMcpDisableConfig(config));
     return response;
+  }
+
+  /** The defaults of every thread; they exist only after initialize has read which MCP servers the user configured. */
+  private get threadDefaults(): ThreadDefaults {
+    if (this.threadDefaultsValue === null) throw new Error("call initialize() before starting a thread so every MCP server can be disabled");
+    return this.threadDefaultsValue;
+  }
+
+  /** Returns the id of the model `model/list` marks as default; a thread must always name its model. */
+  async defaultModelId(): Promise<string> {
+    const { data } = await this.connection.request("model/list", {});
+    const found = data.find((model) => model.isDefault);
+    if (found === undefined) throw new Error("model/list marks no default model; choose a model explicitly or sign in to an account that has one");
+    return found.id;
   }
 
   readAccount(): Promise<GetAccountResponse> {

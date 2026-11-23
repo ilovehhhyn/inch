@@ -62,6 +62,7 @@ export class CodexSupervisor {
     void session.process.exited.then(() => this.handleExit(session));
   }
 
+  /** Resumes only threads that ran a turn (see CodexClient.resumableThreads); a thread with no turn cannot be resumed. */
   private async handleExit(dead: SupervisedSession): Promise<void> {
     if (this.state !== "running" || this.session !== dead) return;
     this.state = "restarting";

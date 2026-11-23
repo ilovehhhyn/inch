@@ -2,6 +2,7 @@
 import type { ClientRequest } from "./generated/ClientRequest";
 import type { InitializeResponse } from "./generated/InitializeResponse";
 import type { JsonValue } from "./generated/serde_json/JsonValue";
+import type { ConfigReadResponse } from "./generated/v2/ConfigReadResponse";
 import type { CancelLoginAccountResponse } from "./generated/v2/CancelLoginAccountResponse";
 import type { GetAccountResponse } from "./generated/v2/GetAccountResponse";
 import type { LoginAccountResponse } from "./generated/v2/LoginAccountResponse";
@@ -22,6 +23,7 @@ export type Unsubscribe = () => void;
 /** Result type of every client request Margin sends; the generated bindings do not map methods to results. */
 export type RequestResults = Readonly<{
   initialize: InitializeResponse;
+  "config/read": ConfigReadResponse;
   "account/read": GetAccountResponse;
   "account/login/start": LoginAccountResponse;
   "account/login/cancel": CancelLoginAccountResponse;

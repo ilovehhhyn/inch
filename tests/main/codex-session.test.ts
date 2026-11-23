@@ -15,10 +15,11 @@ test("a_session_is_returned_after_initialize_and_initialized", async () => {
   const fake = new FakeAppServer();
   fake.respond("initialize", INIT_RESULT);
   fake.ignore("initialized");
+  fake.respond("config/read", { config: {} });
 
   const session = await startCodexSession(options(fake));
 
-  expect(fake.received().map((message) => message.method)).toEqual(["initialize", "initialized"]);
+  expect(fake.received().map((message) => message.method)).toEqual(["initialize", "initialized", "config/read"]);
   expect(session.client).toBeDefined();
 });
 
