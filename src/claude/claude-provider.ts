@@ -223,18 +223,23 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
       if (active.has(threadId)) throw new Error("a turn is already running in this chat; wait for the answer or stop it first");
       const option = requireModelChoice(CLAUDE_MODELS, { model: input.model, reasoning: input.reasoning });
       requireAttachmentsAccepted(option, input.attachments);
-      const credential = await options.credentials();
-      if (credential === null) throw new Error(NOT_SIGNED_IN);
-      const file: ClaudeThreadFile = { ...(await load(threadId)), model: input.model, effort: parseClaudeEffort(input.reasoning) };
-      requireWithinClaudeLimits(Buffer.byteLength(JSON.stringify(replayMessages(file))) + Buffer.byteLength(MARGIN_INSTRUCTIONS), input.attachments);
-      const content: Array<Anthropic.Beta.BetaContentBlockParam> = [
-        ...(await attachmentBlocks(input.attachments, options.content)),
-        ...(input.context === null ? [] : [{ type: "text" as const, text: renderContextBlock(input.context) }]),
-        { type: "text", text: input.question },
-      ];
       const turn: ActiveTurn = { turnId: asTurnId(createId()), controller: new AbortController(), shownText: "", isInterrupted: false };
-      active.set(threadId, turn);
-      void runTurn(credential, file, { role: "user", content }, turn); // answers and failures reach the window as events; runTurn never rejects
+      active.set(threadId, turn); // reserved before the first await, so a second send in the same tick is refused
+      try {
+        const credential = await options.credentials();
+        if (credential === null) throw new Error(NOT_SIGNED_IN);
+        const file: ClaudeThreadFile = { ...(await load(threadId)), model: input.model, effort: parseClaudeEffort(input.reasoning) };
+        requireWithinClaudeLimits(Buffer.byteLength(JSON.stringify(replayMessages(file))) + Buffer.byteLength(MARGIN_INSTRUCTIONS), input.attachments);
+        const content: Array<Anthropic.Beta.BetaContentBlockParam> = [
+          ...(await attachmentBlocks(input.attachments, options.content)),
+          ...(input.context === null ? [] : [{ type: "text" as const, text: renderContextBlock(input.context) }]),
+          { type: "text", text: input.question },
+        ];
+        void runTurn(credential, file, { role: "user", content }, turn); // answers and failures reach the window as events; runTurn never rejects and releases the chat when it ends
+      } catch (error) {
+        active.delete(threadId);
+        throw error;
+      }
       return turn.turnId;
     },
     async interruptTurn(threadId, turnId) {

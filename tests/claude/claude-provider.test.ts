@@ -197,6 +197,30 @@ test("a_second_turn_while_one_runs_is_refused_and_sends_nothing", async () => {
   expect(context.fake.requests).toHaveLength(1);
 });
 
+test("two_turns_started_without_waiting_for_each_other_start_one_stream_and_refuse_the_second", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["first answer"] });
+  const threadId = await context.provider.startThread();
+  const input = { context: null, model: "claude-opus-5-5", reasoning: "low", attachments: [] } as const;
+
+  const results = await Promise.allSettled([context.provider.startTurn(threadId, { ...input, question: "first" }), context.provider.startTurn(threadId, { ...input, question: "second" })]);
+
+  expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+  expect((results[1] as PromiseRejectedResult).reason).toEqual(new Error("a turn is already running in this chat; wait for the answer or stop it first"));
+  await until(() => completedEvents(context.events).length === 1);
+  expect(context.fake.requests).toHaveLength(1);
+  expect((await context.store.read(threadId)).turns).toHaveLength(1);
+});
+
+test("a_turn_that_fails_before_it_streams_releases_the_chat_for_the_next_send", async () => {
+  const context = await setup(null);
+  const threadId = await context.provider.startThread();
+  const input = { question: "q", context: null, model: "claude-opus-5-5", reasoning: "low", attachments: [] } as const;
+
+  await expect(context.provider.startTurn(threadId, input)).rejects.toThrow(NOT_SIGNED_IN);
+  await expect(context.provider.startTurn(threadId, input)).rejects.toThrow(NOT_SIGNED_IN);
+});
+
 async function chatWithTwoTurns(context: Setup): Promise<Readonly<{ threadId: ThreadId; first: TurnId; second: TurnId }>> {
   context.fake.script({ kind: "answer", chunks: ["A1"] }, { kind: "answer", chunks: ["A2"] });
   const threadId = await context.provider.startThread();
