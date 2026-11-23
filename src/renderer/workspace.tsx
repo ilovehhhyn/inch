@@ -1,29 +1,25 @@
-// Draws the signed-in window: the chat list, the main chat and its composer, and sends the user's questions.
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
+// Draws the signed-in window: the chat list, the main chat, the right panel of side chats, and sends the user's questions.
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
 
 import type { MarginApi } from "../shared/ipc-contract";
-import type { ThreadId } from "../shared/provider-events";
-import type { ThreadSummary } from "../shared/thread-history";
+import type { Layout } from "../shared/layout";
+import type { ThreadId, TurnId } from "../shared/provider-events";
+import { messagesAfterTurn, type ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
-import { Composer, type SendMode } from "./components/Composer";
+import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
-import { captureContext, CAPTURE_BUDGET_MS } from "./context/capture-context";
-import { asPaneId, MAIN_PANE_ID, type PaneId } from "./context/pane-id";
+import { SideChatPane } from "./components/SideChatPane";
+import { MAIN_PANE_ID, sidePaneId } from "./context/pane-id";
 import { createScrollTracker } from "./context/scroll-tracker";
 import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
+import { useSender } from "./state/use-sender";
 
 export type WorkspaceProps = Readonly<{
   api: MarginApi;
   draft: string;
   onDraftChange: (draft: string) => void;
 }>;
-
-/** The pane that holds keyboard focus: the nearest ancestor of the focused element that names a pane. */
-function focusedPaneId(): PaneId | null {
-  const id = document.activeElement?.closest("[data-pane-id]")?.getAttribute("data-pane-id");
-  return id === null || id === undefined ? null : asPaneId(id);
-}
 
 const NEW_CHAT_TITLE = "New chat";
 
@@ -39,10 +35,20 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
   const [threads, setThreads] = useState<ReadonlyArray<ThreadSummary>>([]);
+  const [layout, setLayout] = useState<Layout | null>(null);
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
-  const [isSending, setIsSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const view = useSyncExternalStore(store.subscribe, () => (mainThread === null ? EMPTY_THREAD : store.view(mainThread)));
+  const openingSideChats = useRef(new Set<ThreadId>());
+  const mainView = useSyncExternalStore(store.subscribe, () => (mainThread === null ? EMPTY_THREAD : store.view(mainThread)));
+
+  const report = useCallback(
+    (threadId: ThreadId | null, error: unknown): void => {
+      if (threadId === null) setProblem(messageOf(error));
+      else store.reportError(threadId, messageOf(error));
+    },
+    [store],
+  );
+  const sender = useSender(api, store, tracker, report);
 
   const refreshThreads = useCallback(() => {
     api.threadList().then(setThreads, (error: unknown) => setProblem(`Could not list chats: ${messageOf(error)}`));
@@ -50,45 +56,48 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
 
   useEffect(() => {
     refreshThreads();
+    api.layoutRead().then(setLayout, (error: unknown) => setProblem(`Could not read the saved layout: ${messageOf(error)}`));
     return api.onProviderEvent((event) => {
       store.apply(event);
       if (event.type === "completed") refreshThreads();
     });
   }, [api, store, refreshThreads]);
 
-  function report(threadId: ThreadId | null, error: unknown): void {
-    if (threadId === null) setProblem(messageOf(error));
-    else store.reportError(threadId, messageOf(error));
-  }
+  const mainTurnIds = useMemo(() => new Set(mainView.messages.map((message) => message.turnId)), [mainView.messages]);
+  const visibleSideChats = useMemo(() => (layout?.sideChats ?? []).filter((chat) => mainTurnIds.has(chat.forkedFromTurn)), [layout, mainTurnIds]);
 
-  /** Reads the pane scrolled last (else the focused pane) for Command-I; Enter reads nothing. Either send starts a new scroll window. */
-  function contextFor(mode: SendMode): string | null {
-    const paneId = tracker.choosePane(focusedPaneId());
-    tracker.markMessageSent();
-    if (mode === "plain") return null;
-    if (paneId === null) throw new Error("no pane to read: scroll a pane or click into one, then press Command-I");
-    const capture = captureContext(paneId);
-    if (capture.elapsedMs > CAPTURE_BUDGET_MS) console.warn(`reading ${paneId} took ${capture.elapsedMs.toFixed(1)} ms, over the ${CAPTURE_BUDGET_MS} ms budget`);
-    return capture.text;
-  }
-
-  async function send(question: string, mode: SendMode): Promise<void> {
-    setProblem(null);
-    setIsSending(true);
-    let threadId = mainThread;
-    try {
-      const contextText = contextFor(mode);
-      if (threadId === null) {
-        threadId = await api.threadStart();
-        setMainThread(threadId);
-      }
-      const turnId = await api.turnStart(threadId, question, contextText);
-      store.begin(threadId, { turnId, question });
-    } catch (error) {
-      report(threadId, error);
-    } finally {
-      setIsSending(false);
+  useEffect(() => {
+    for (const chat of visibleSideChats) {
+      if (store.isLoaded(chat.threadId) || openingSideChats.current.has(chat.threadId)) continue;
+      openingSideChats.current.add(chat.threadId);
+      api
+        .threadOpen(chat.threadId)
+        .then((history) => store.load(chat.threadId, messagesAfterTurn(history, chat.forkedFromTurn)))
+        .catch((error: unknown) => store.reportError(chat.threadId, messageOf(error)))
+        .finally(() => openingSideChats.current.delete(chat.threadId));
     }
+  }, [api, store, visibleSideChats]);
+
+  async function saveLayout(change: (current: Layout) => Layout): Promise<void> {
+    if (layout === null) throw new Error("the saved layout could not be read, so Margin will not overwrite it; fix or delete layout.json in Margin's application support folder");
+    const next = change(layout);
+    await api.layoutWrite(next);
+    setLayout(next);
+  }
+
+  async function openSideChat(turnId: TurnId): Promise<void> {
+    if (mainThread === null) return;
+    try {
+      const forkId = await api.threadFork(mainThread, turnId);
+      store.load(forkId, []);
+      await saveLayout((current) => ({ ...current, sideChats: [...current.sideChats, { threadId: forkId, forkedFromTurn: turnId }] }));
+    } catch (error) {
+      report(mainThread, error);
+    }
+  }
+
+  function closeSideChat(threadId: ThreadId): void {
+    saveLayout((current) => ({ ...current, sideChats: current.sideChats.filter((chat) => chat.threadId !== threadId) })).catch((error: unknown) => report(mainThread, error));
   }
 
   function select(threadId: ThreadId): void {
@@ -101,8 +110,8 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     );
   }
 
-  function interrupt(): void {
-    if (mainThread !== null && view.activeTurn !== null) void api.turnInterrupt(mainThread, view.activeTurn).catch((error: unknown) => report(mainThread, error));
+  function interrupt(threadId: ThreadId, turnId: TurnId): void {
+    api.turnInterrupt(threadId, turnId).catch((error: unknown) => report(threadId, error));
   }
 
   const mainTitle = threads.find((thread) => thread.id === mainThread)?.title ?? NEW_CHAT_TITLE;
@@ -119,11 +128,39 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
         }}
       />
       <div className="main-col">
-        <ChatPane paneId={MAIN_PANE_ID} threadId={mainThread} title={mainTitle} store={store} tracker={tracker}>
+        <ChatPane paneId={MAIN_PANE_ID} threadId={mainThread} label="Chat" title={mainTitle} store={store} tracker={tracker} onOpenSideChat={(turnId) => void openSideChat(turnId)}>
           {problem === null ? null : <p className="thread-error" role="alert">{problem}</p>}
-          <Composer draft={draft} onDraftChange={onDraftChange} onSend={(question, mode) => void send(question, mode)} onInterrupt={interrupt} busy={isSending || view.activeTurn !== null} />
+          <Composer
+            draft={draft}
+            onDraftChange={onDraftChange}
+            onSend={(question, mode) => void sender.send(mainThread, question, mode, setMainThread)}
+            onInterrupt={() => {
+              if (mainThread !== null && mainView.activeTurn !== null) interrupt(mainThread, mainView.activeTurn);
+            }}
+            busy={sender.isSending(mainThread) || mainView.activeTurn !== null}
+          />
         </ChatPane>
       </div>
+      {visibleSideChats.length === 0 ? null : (
+        <aside className="side">
+          <div className="side-chats">
+            {visibleSideChats.map((chat) => (
+              <SideChatPane
+                key={chat.threadId}
+                paneId={sidePaneId(chat.threadId)}
+                threadId={chat.threadId}
+                title={`Side chat on ${mainTitle}`}
+                store={store}
+                tracker={tracker}
+                isSending={sender.isSending(chat.threadId)}
+                onSend={(threadId, question, mode) => void sender.send(threadId, question, mode, setMainThread)}
+                onInterrupt={interrupt}
+                onClose={closeSideChat}
+              />
+            ))}
+          </div>
+        </aside>
+      )}
     </main>
   );
 }

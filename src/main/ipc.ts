@@ -3,6 +3,7 @@ import { clipboard, ipcMain } from "electron";
 
 import { parseLoginKind, type AccountSummary, type LoginKind, type LoginStarted } from "../shared/auth";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
+import { parseLayout, type Layout } from "../shared/layout";
 import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { HistoryMessage, ThreadSummary } from "../shared/thread-history";
 
@@ -18,6 +19,9 @@ export type IpcHandlers = Readonly<{
   threadStart: () => Promise<ThreadId>;
   threadOpen: (threadId: ThreadId) => Promise<ReadonlyArray<HistoryMessage>>;
   threadList: () => Promise<ReadonlyArray<ThreadSummary>>;
+  threadFork: (threadId: ThreadId, lastTurnId: TurnId) => Promise<ThreadId>;
+  layoutRead: () => Promise<Layout>;
+  layoutWrite: (layout: Layout) => Promise<void>;
   turnStart: (threadId: ThreadId, question: string, contextText: string | null) => Promise<TurnId>;
   turnInterrupt: (threadId: ThreadId, turnId: TurnId) => Promise<void>;
 }>;
@@ -40,6 +44,11 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.threadStart, () => handlers.threadStart());
   ipcMain.handle(IPC_CHANNELS.threadOpen, (_event, threadId: unknown) => handlers.threadOpen(asThreadId(requireString(threadId, "threadId"))));
   ipcMain.handle(IPC_CHANNELS.threadList, () => handlers.threadList());
+  ipcMain.handle(IPC_CHANNELS.threadFork, (_event, threadId: unknown, lastTurnId: unknown) =>
+    handlers.threadFork(asThreadId(requireString(threadId, "threadId")), asTurnId(requireString(lastTurnId, "lastTurnId"))),
+  );
+  ipcMain.handle(IPC_CHANNELS.layoutRead, () => handlers.layoutRead());
+  ipcMain.handle(IPC_CHANNELS.layoutWrite, (_event, layout: unknown) => handlers.layoutWrite(parseLayout(layout, "sent by the window")));
   ipcMain.handle(IPC_CHANNELS.turnStart, (_event, threadId: unknown, question: unknown, contextText: unknown) =>
     handlers.turnStart(asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), parseContextText(contextText)),
   );

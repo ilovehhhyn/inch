@@ -10,3 +10,10 @@ export type HistoryMessage = Readonly<{
 }>;
 
 export type ThreadSummary = Readonly<{ id: ThreadId; title: string; updatedAtSec: number }>;
+
+/** The messages of a forked thread that came after `forkedFromTurn`; the earlier ones are copies of the parent's turns. */
+export function messagesAfterTurn(history: ReadonlyArray<HistoryMessage>, forkedFromTurn: TurnId): ReadonlyArray<HistoryMessage> {
+  const lastInherited = history.findLastIndex((message) => message.turnId === forkedFromTurn);
+  if (lastInherited === -1) throw new Error(`the side chat history does not contain turn ${forkedFromTurn}; open the chat it was forked from or close this side chat`);
+  return history.slice(lastInherited + 1);
+}

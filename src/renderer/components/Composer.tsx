@@ -14,6 +14,8 @@ export type ComposerProps = Readonly<{
   /** True while an answer streams: every send is refused and nothing is queued. */
   busy: boolean;
   placeholder?: string;
+  /** The accessible name of the text box; the main composer and each side chat composer need different ones. */
+  label?: string;
 }>;
 
 function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null {
@@ -25,7 +27,7 @@ function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null 
   return null;
 }
 
-export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything" }: ComposerProps): ReactElement {
+export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message" }: ComposerProps): ReactElement {
   const [hint, setHint] = useState<string | null>(null);
 
   function trySend(mode: SendMode): void {
@@ -52,7 +54,7 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
   return (
     <div className="composer">
       <textarea
-        aria-label="Message"
+        aria-label={label}
         className="composer-input"
         rows={1}
         placeholder={placeholder}

@@ -14,6 +14,7 @@ import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
 import { registerIpc } from "./ipc";
+import { readLayout, writeLayout } from "./layout-store";
 
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
@@ -55,6 +56,10 @@ async function createEmptyWorkspace(): Promise<string> {
   const path = join(app.getPath("userData"), "empty-workspace");
   await mkdir(path, { recursive: true });
   return path;
+}
+
+function layoutPath(): string {
+  return join(app.getPath("userData"), "layout.json");
 }
 
 async function startCodex(): Promise<StartedCodex> {
@@ -100,6 +105,12 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
       return toHistory(await client.readThread(threadId));
     },
     threadList: async () => (await (await starting).supervisor.client.listThreads()).map(summarizeThread),
+    threadFork: async (threadId, lastTurnId) => {
+      const { client } = (await starting).supervisor;
+      return client.forkThread(threadId, lastTurnId, await client.defaultModelId());
+    },
+    layoutRead: () => readLayout(layoutPath()),
+    layoutWrite: (layout) => writeLayout(layoutPath(), layout),
     turnStart: async (threadId, question, contextText) => (await starting).supervisor.client.startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),
     turnInterrupt: async (threadId, turnId) => (await starting).supervisor.client.interruptTurn(threadId, turnId),
   });

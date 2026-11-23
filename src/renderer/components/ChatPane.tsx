@@ -15,6 +15,8 @@ export const BOTTOM_TOLERANCE_PX = 24;
 export type ChatPaneProps = Readonly<{
   paneId: PaneId;
   threadId: ThreadId | null;
+  /** The accessible name of the pane, such as "Chat" or "Side chat". */
+  label: string;
   /** Names the pane in the context block, for example the chat's title. */
   title: string;
   store: ThreadStore;
@@ -37,7 +39,7 @@ function assignRef(ref: Ref<HTMLDivElement> | undefined, element: HTMLDivElement
 
 const NO_THREAD_VIEW = { messages: [], activeTurn: null, error: null } as const;
 
-export function ChatPane({ paneId, threadId, title, store, tracker, onOpenSideChat, children, ref }: ChatPaneProps): ReactElement {
+export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpenSideChat, children, ref }: ChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => (threadId === null ? NO_THREAD_VIEW : store.view(threadId)));
   const element = useRef<HTMLDivElement | null>(null);
   const followsBottom = useRef(true);
@@ -75,7 +77,7 @@ export function ChatPane({ paneId, threadId, title, store, tracker, onOpenSideCh
   }, [view.messages, threadId]);
 
   return (
-    <section className="chat-pane" data-pane-id={paneId} aria-label="Chat">
+    <section className="chat-pane" data-pane-id={paneId} aria-label={label}>
       <div
         className="view"
         ref={attach}
