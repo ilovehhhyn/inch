@@ -1,6 +1,6 @@
 // Invariant: git runs with a fixed argument list and environment and a bounded wait, and every failure names the folder.
 import { execFile as nodeExecFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -31,13 +31,16 @@ test("head_runs_git_diff_against_head_with_fixed_arguments_and_an_explicit_envir
   const text = await runGitDiff({ folder: FOLDER, base: "HEAD", exec });
 
   expect(text).toBe("diff text");
-  expect(calls).toHaveLength(1);
-  expect(calls[0]?.file).toBe("git");
-  expect(calls[0]?.args).toEqual(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3", "HEAD"]);
-  expect(calls[0]?.options.timeout).toBe(DIFF_TIMEOUT_MS);
-  expect(calls[0]?.options.maxBuffer).toBe(DIFF_READ_LIMIT_BYTES);
-  expect(Object.keys(calls[0]?.options.env ?? {}).sort()).toEqual(["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "LC_ALL", "PATH"]);
-  expect(calls[0]?.options.env["GIT_TERMINAL_PROMPT"]).toBe("0");
+  const diff = calls.at(-1);
+  expect(calls.map((call) => call.args.find((arg) => ["config", "rev-parse", "diff"].includes(arg)))).toEqual(["config", "rev-parse", "diff"]);
+  expect(diff?.file).toBe("git");
+  expect(diff?.args).toEqual(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3", "HEAD"]);
+  for (const call of calls) {
+    expect(call.options.timeout).toBe(DIFF_TIMEOUT_MS);
+    expect(call.options.maxBuffer).toBe(DIFF_READ_LIMIT_BYTES);
+    expect(Object.keys(call.options.env).sort()).toEqual(["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "LC_ALL", "PATH"]);
+    expect(call.options.env["GIT_TERMINAL_PROMPT"]).toBe("0");
+  }
 });
 
 test("staged_adds_the_staged_flag_and_nothing_else", async () => {
@@ -45,8 +48,8 @@ test("staged_adds_the_staged_flag_and_nothing_else", async () => {
 
   await runGitDiff({ folder: FOLDER, base: "staged", exec });
 
-  expect(calls[0]?.args.slice(-2)).toEqual(["-U3", "--staged"]);
-  expect(calls[0]?.args).not.toContain("HEAD");
+  expect(calls.at(-1)?.args.slice(-2)).toEqual(["-U3", "--staged"]);
+  expect(calls.at(-1)?.args).not.toContain("HEAD");
 });
 
 test("git_failure_message_names_the_folder", async () => {
@@ -79,6 +82,32 @@ test("a_relative_folder_is_rejected_before_git_runs", async () => {
   await expect(runGitDiff({ folder: "repo", base: "HEAD", exec })).rejects.toThrow(/folder must be an absolute path, got `repo`/);
 
   expect(calls).toEqual([]);
+});
+
+test("every_configured_filter_driver_is_blanked_by_name_including_names_with_dots", async () => {
+  const keys = "filter.lfs.clean\nfilter.lfs.smudge\nfilter.lfs.process\nfilter.lfs.required\nfilter.my.driver.clean\n";
+  const calls: Array<Call> = [];
+  const exec: ExecFile = async (file, args, options) => {
+    calls.push({ file, args, options });
+    return { stdout: args.includes("--get-regexp") ? keys : "", stderr: "" };
+  };
+
+  await runGitDiff({ folder: FOLDER, base: "HEAD", exec });
+
+  const args = calls.at(-1)?.args ?? [];
+  for (const name of ["lfs", "my.driver"]) {
+    for (const variable of ["clean", "process", "smudge"]) expect(args).toContain(`filter.${name}.${variable}=`);
+    expect(args).toContain(`filter.${name}.required=false`);
+  }
+});
+
+test("a_repository_without_filter_drivers_is_not_an_error", async () => {
+  const exec: ExecFile = async (_file, args) => {
+    if (args.includes("--get-regexp")) throw Object.assign(new Error("Command failed"), { code: 1, stderr: "" });
+    return { stdout: "ok", stderr: "" };
+  };
+
+  await expect(runGitDiff({ folder: FOLDER, base: "HEAD", exec })).resolves.toBe("ok");
 });
 
 test("a_staged_change_and_an_unstaged_change_both_appear_against_head", async () => {
@@ -129,4 +158,51 @@ test("a_real_repository_gives_a_diff_with_the_changed_line", async () => {
 
   expect(text).toContain("diff --git a/a.txt b/a.txt");
   expect(text).toContain("+TWO");
+});
+
+async function markerExists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+test("a_planted_clean_filter_does_not_run_and_the_diff_is_still_produced", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "margin-git-"));
+  const git = (...args: Array<string>) => run("git", ["-C", folder, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args]);
+  await git("init", "-q");
+  await writeFile(join(folder, ".gitattributes"), "*.txt filter=probe\n*.md filter=strict\n");
+  await writeFile(join(folder, "a.txt"), "one\n");
+  await writeFile(join(folder, "b.md"), "one\n");
+  await git("add", ".");
+  await git("commit", "-q", "-m", "first");
+  const cleanMarker = join(folder, "CLEAN_RAN");
+  const processMarker = join(folder, "PROCESS_RAN");
+  const strictMarker = join(folder, "STRICT_RAN");
+  await git("config", "filter.probe.clean", `sh -c 'touch ${cleanMarker}; cat'`);
+  await git("config", "filter.probe.process", `sh -c 'touch ${processMarker}'`);
+  await git("config", "filter.strict.clean", `sh -c 'touch ${strictMarker}; cat'`);
+  await git("config", "filter.strict.required", "true");
+  await writeFile(join(folder, "a.txt"), "two\n");
+  await writeFile(join(folder, "b.md"), "two\n");
+
+  const text = await runGitDiff({ folder, base: "HEAD" });
+
+  expect(text).toContain("+two");
+  expect(await markerExists(cleanMarker)).toBe(false);
+  expect(await markerExists(processMarker)).toBe(false);
+  expect(await markerExists(strictMarker)).toBe(false);
+});
+
+test("a_repository_with_no_commits_diffs_its_staged_files_against_the_empty_tree", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "margin-git-"));
+  const git = (...args: Array<string>) => run("git", ["-C", folder, ...args]);
+  await git("init", "-q");
+  await writeFile(join(folder, "a.txt"), "hello\n");
+  await git("add", "a.txt");
+
+  const text = await runGitDiff({ folder, base: "HEAD" });
+
+  expect(text).toContain("diff --git a/a.txt b/a.txt");
+  expect(text).toContain("+hello");
 });
