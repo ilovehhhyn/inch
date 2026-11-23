@@ -175,6 +175,23 @@ test("list_and_read_ask_for_the_data_the_window_needs", async () => {
   expect(thread.id).toBe(THREAD_ID);
 });
 
+test("list_fills_the_fork_parent_because_thread_list_leaves_it_empty", async () => {
+  const { fake, client, sent } = await setup();
+  fake.respond("thread/list", { data: [{ id: "main-1", forkedFromId: null }, { id: "side-1", forkedFromId: null }], nextCursor: null, backwardsCursor: null });
+  fake.respond("thread/read", (params) => {
+    const threadId = (params as { threadId: string }).threadId;
+    return { thread: { id: threadId, forkedFromId: threadId === "side-1" ? "main-1" : null, turns: [] } };
+  });
+
+  const threads = await client.listThreads();
+  const again = await client.listThreads();
+
+  expect(threads.map((thread) => [thread.id, thread.forkedFromId])).toEqual([["main-1", null], ["side-1", "main-1"]]);
+  expect(again.map((thread) => thread.forkedFromId)).toEqual([null, "main-1"]);
+  const reads = sent().filter((message) => message.method === "thread/read");
+  expect(reads.map((message) => message.params)).toEqual([{ threadId: "main-1", includeTurns: false }, { threadId: "side-1", includeTurns: false }]);
+});
+
 test("a_turn_with_context_sends_two_text_items_and_the_context_ends_with_a_blank_line", async () => {
   const { fake, client, sent } = await setup();
   fake.respond("turn/start", { turn: { id: TURN_ID } });

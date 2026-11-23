@@ -119,6 +119,7 @@ export class CodexClient {
   private readonly emptyWorkspacePath: string;
   private readonly resumable = new Set<ThreadId>();
   private readonly turns = new Map<TurnId, ThreadId>();
+  private readonly forkParents = new Map<string, string | null>();
 
   constructor(options: CodexClientOptions) {
     this.connection = options.connection;
@@ -247,10 +248,22 @@ export class CodexClient {
     return asThreadId(thread.id);
   }
 
-  /** Lists the threads that use Margin's empty workspace, which are the threads Margin created. */
+  /**
+   * Lists the threads that use Margin's empty workspace, which are the threads Margin created. `thread/list` leaves
+   * `forkedFromId` null (measured on codex-cli 0.146.0), so it is filled from `thread/read`, once per thread: a fork's
+   * parent never changes.
+   */
   async listThreads(): Promise<Array<Thread>> {
     const response = await this.connection.request("thread/list", { cwd: this.emptyWorkspacePath });
-    return response.data;
+    return Promise.all(response.data.map(async (thread) => ({ ...thread, forkedFromId: await this.forkParentOf(thread) })));
+  }
+
+  private async forkParentOf(thread: Thread): Promise<string | null> {
+    const known = this.forkParents.get(thread.id);
+    if (known !== undefined) return known;
+    const { thread: read } = await this.connection.request("thread/read", { threadId: thread.id, includeTurns: false });
+    this.forkParents.set(thread.id, read.forkedFromId);
+    return read.forkedFromId;
   }
 
   async readThread(threadId: ThreadId): Promise<Thread> {
