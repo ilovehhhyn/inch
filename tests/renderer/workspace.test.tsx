@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Invariant: Enter sends the question as a plain turn on a thread the window starts when needed, and streamed text appears in that thread.
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, onTestFinished, test } from "vitest";
 
@@ -140,6 +140,32 @@ test("retry_is_refused_while_another_answer_is_streaming", async () => {
   await waitFor(() => expect(api.turnStarts).toHaveLength(2));
 
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+test("a_double_click_on_retry_sends_one_turn", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+  await userEvent.type(await screen.findByLabelText("Message"), "q{Enter}");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => api.emitProvider({ type: "completed", threadId: THREAD, turnId: asTurnId("turn-1"), status: "failed", error: CRASH }));
+  const retry = await screen.findByRole("button", { name: "Retry" });
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = api.turnStart;
+  api.turnStart = async (...args) => {
+    await gate;
+    return original(...args);
+  };
+
+  fireEvent.click(retry);
+  fireEvent.click(retry);
+  release();
+
+  await waitFor(() => expect(api.turnStarts).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(api.turnStarts).toHaveLength(2);
 });
 
 test("command_i_with_nothing_to_read_fails_visibly_and_keeps_the_typed_question", async () => {

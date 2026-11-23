@@ -75,6 +75,8 @@ type LastSend = Readonly<{ provider: ProviderId; question: string; contextText: 
 
 export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTracker, recorder: LatencyRecorder, report: (threadId: ThreadId | null, error: unknown) => void): Sender {
   const lastSent = useRef(new Map<ThreadId, LastSend>());
+  /** Chats with a retry in flight; state would update too late to stop a double click. */
+  const retrying = useRef(new Set<ThreadId>());
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const setPendingKey = useCallback((key: string, isPending: boolean) => {
     setPending((previous) => {
@@ -122,6 +124,8 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
     async (threadId: ThreadId): Promise<void> => {
       const last = lastSent.current.get(threadId);
       if (last === undefined) return report(threadId, new Error("nothing to retry in this chat; type the question again"));
+      if (retrying.current.has(threadId) || store.view(threadId).activeTurn !== null) return; // a second click while a retry or an answer is in flight starts nothing
+      retrying.current.add(threadId);
       setPendingKey(threadId, true);
       try {
         const turnId = await api.turnStart(last.provider, threadId, last.question, last.contextText, last.choice, last.attachments.map((chip) => chip.id));
@@ -129,6 +133,7 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
       } catch (error) {
         report(threadId, error);
       } finally {
+        retrying.current.delete(threadId);
         setPendingKey(threadId, false);
       }
     },
