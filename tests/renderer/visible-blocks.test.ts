@@ -108,6 +108,12 @@ test("leading_spaces_are_kept_and_trailing_whitespace_is_dropped", () => {
   expect(readVisibleBlocks(container)[0]?.text).toBe("        return peak * step");
 });
 
+test("leading_blank_lines_are_dropped_but_the_first_lines_indentation_is_kept", () => {
+  const container = pane(block("\n\n  Fix the model.\n", "message 2 (assistant)", 120, 146));
+
+  expect(readVisibleBlocks(container)[0]?.text).toBe("  Fix the model.");
+});
+
 test("labels_are_one_line_and_at_most_the_label_limit", () => {
   const container = pane(block("x", `line one\nline two ${"y".repeat(MAX_LABEL_CHARS)}`, 120, 146));
 

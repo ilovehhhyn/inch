@@ -35,6 +35,11 @@ function labelOf(block: Element): string {
   return capLabel(heading === null ? base : `${oneLine(base)}, heading "${heading}"`);
 }
 
+/** Markdown list items carry blank lines around their text; the first line's own indentation is kept because code needs it. */
+function textOf(block: Element): string {
+  return (block.textContent ?? "").replace(/^(?:[ \t]*\n)+/, "").trimEnd();
+}
+
 /** A block inside another block is already part of the outer block's text. */
 function isNested(block: Element, container: HTMLElement): boolean {
   const outer = block.parentElement?.closest(BLOCK_SELECTOR) ?? null;
@@ -50,7 +55,7 @@ export function readVisibleBlocks(container: HTMLElement): ReadonlyArray<Visible
     if (rectangle.bottom <= view.top || rectangle.top >= view.bottom) continue;
     if (isNested(block, container)) continue;
     found.push({
-      text: (block.textContent ?? "").trimEnd(),
+      text: textOf(block),
       label: labelOf(block),
       top: Math.max(rectangle.top, view.top) - view.top,
       bottom: Math.min(rectangle.bottom, view.bottom) - view.top,
