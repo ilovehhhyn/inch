@@ -1,0 +1,339 @@
+/* Margin's window styles, taken at 1:1 from demo/margin-launch.html; docs/ui-reference.md lists each value and its source rule. */
+@font-face {
+  font-family: "Geist";
+  src: url("../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+}
+
+:root {
+  --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --app: #ffffff;
+  --app-soft: #f7f7f5;
+  --app-line: #e8e7e3;
+  --ink: #1d1d1b;
+  --user-bubble: #f1f0ed;
+  --sidebar-item-text: #55544f;
+  --sidebar-item-on: #ebeae6;
+  --sidebar-width: 240px;
+  --thread-width: 720px;
+  --thread-font-size: 19px;
+  --thread-line-height: 1.62;
+  --thread-gap: 28px;
+  --user-bubble-max-width: 470px;
+  --composer-height: 64px;
+  --composer-radius: 32px;
+  --composer-border: #e3e1db;
+  --composer-placeholder: #a7a6a0;
+  --panel-width: 600px;
+  --panel-background: #fbfbf9;
+  --diff-pane-height: 430px;
+  --pane-head-height: 48px;
+  --diff-font: 15px/26px var(--font-mono);
+  --diff-text: #24292f;
+  --diff-gutter: #8c959f;
+  --diff-add: #e6ffec;
+  --diff-add-sign: #1a7f37;
+  --diff-delete: #ffebe9;
+  --diff-delete-sign: #cf222e;
+  --file-row: #f6f8fa;
+  --file-row-line: #e5e7ea;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--app);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+  background: var(--app);
+}
+.sidebar {
+  width: var(--sidebar-width);
+  flex: none;
+  background: var(--app-soft);
+  border-right: 1px solid var(--app-line);
+  padding: 18px 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 16px;
+  overflow-y: auto;
+}
+.side-item {
+  all: unset;
+  display: block;
+  padding: 9px 10px;
+  border-radius: 10px;
+  color: var(--sidebar-item-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.side-item.on {
+  background: var(--sidebar-item-on);
+  color: var(--ink);
+  font-weight: 500;
+}
+.main-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.chat-pane {
+  position: relative;
+  width: var(--thread-width);
+  max-width: 100%;
+  height: 100%;
+}
+.chat-pane .view {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  outline: none;
+}
+.thread {
+  padding: 36px 20px calc(var(--composer-height) + 64px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--thread-gap);
+  font-size: var(--thread-font-size);
+  line-height: var(--thread-line-height);
+}
+.u {
+  align-self: flex-end;
+  background: var(--user-bubble);
+  border-radius: 22px;
+  padding: 11px 20px;
+  max-width: var(--user-bubble-max-width);
+  white-space: pre-wrap;
+}
+.a p {
+  margin: 0 0 14px;
+}
+.a h1,
+.a h2,
+.a h3,
+.a h4,
+.a h5,
+.a h6 {
+  margin: 22px 0 6px;
+  font-size: var(--thread-font-size);
+  font-weight: 600;
+}
+.a pre {
+  background: var(--user-bubble);
+  border-radius: 8px;
+  padding: 10px 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.a :not(pre) > code {
+  background: var(--user-bubble);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.pending::before {
+  content: "…";
+  color: var(--composer-placeholder);
+}
+.side-chat-button {
+  all: unset;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--sidebar-item-text);
+  opacity: 0;
+}
+.a:hover .side-chat-button,
+.side-chat-button:focus-visible {
+  opacity: 1;
+}
+.thread-error {
+  color: var(--diff-delete-sign);
+  margin: 0;
+  font-size: 16px;
+}
+
+.composer {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 24px;
+  min-height: var(--composer-height);
+  border: 1px solid var(--composer-border);
+  border-radius: var(--composer-radius);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 0 22px;
+  background: var(--app);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.07);
+  box-sizing: border-box;
+}
+.composer-input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  font: 20px/30px var(--font-ui);
+  color: var(--ink);
+  field-sizing: content;
+  max-height: 180px;
+  padding: 0;
+}
+.composer-input::placeholder {
+  color: var(--composer-placeholder);
+}
+.send {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+  font-size: 20px;
+  flex: none;
+  cursor: pointer;
+}
+.composer-hint {
+  position: absolute;
+  left: 22px;
+  bottom: calc(100% + 6px);
+  margin: 0;
+  font-size: 14px;
+  color: var(--sidebar-item-text);
+}
+
+.side {
+  width: var(--panel-width);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-background);
+  border-left: 1px solid var(--app-line);
+  box-shadow: -20px 0 40px rgba(0, 0, 0, 0.04);
+}
+.pane-head {
+  height: var(--pane-head-height);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--app-line);
+  font-weight: 600;
+  font-size: 16px;
+  background: var(--panel-background);
+}
+.diff-pane {
+  height: var(--diff-pane-height);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #dddcd6;
+  background: var(--app);
+}
+.diff-pane .view {
+  flex: 1;
+  overflow: auto;
+  outline: none;
+}
+.diff {
+  font: var(--diff-font);
+  color: var(--diff-text);
+  min-width: max-content;
+}
+.file {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--file-row);
+  border-block: 1px solid var(--file-row-line);
+  font-weight: 500;
+  font-size: 14px;
+  color: #3b3f45;
+}
+.dl {
+  display: flex;
+  white-space: pre;
+}
+.dl::before {
+  content: attr(data-line);
+  width: 46px;
+  flex: none;
+  text-align: right;
+  padding-right: 10px;
+  color: var(--diff-gutter);
+}
+.dl::after {
+  content: attr(data-sign);
+  order: -1;
+}
+.dl.add {
+  background: var(--diff-add);
+}
+.dl.del {
+  background: var(--diff-delete);
+}
+.side-chats {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.side-chats .chat-pane {
+  width: auto;
+  height: 420px;
+}
+.side-chats .thread {
+  padding: 20px 22px 0;
+  font-size: 17px;
+  gap: 18px;
+  line-height: 1.55;
+}
+.side-chats .u {
+  padding: 8px 16px;
+  border-radius: 18px;
+}
+.side-chats .a p {
+  margin: 0 0 8px;
+}
+.side-chats .composer {
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  min-height: 52px;
+  border-radius: 26px;
+}
+.side-chats .composer-input {
+  font-size: 17px;
+}
+.side-chats .send {
+  width: 34px;
+  height: 34px;
+  font-size: 17px;
+}

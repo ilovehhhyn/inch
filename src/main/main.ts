@@ -24,6 +24,9 @@ function createWindow(): BrowserWindow {
     height: WINDOW_HEIGHT_PX,
     webPreferences: { preload: join(import.meta.dirname, "../preload/preload.cjs"), contextIsolation: true, sandbox: true },
   });
+  // Links in answers must never navigate the window away from Margin.
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
   if (devServerUrl !== undefined) {
     void window.loadURL(devServerUrl);

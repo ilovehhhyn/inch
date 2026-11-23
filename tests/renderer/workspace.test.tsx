@@ -1,0 +1,100 @@
+// @vitest-environment jsdom
+// Invariant: Enter sends the question as a plain turn on a thread the window starts when needed, and streamed text appears in that thread.
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+
+import { App } from "../../src/renderer/app";
+import { asThreadId, asTurnId } from "../../src/shared/provider-events";
+import { FakeMarginApi } from "../fakes/fake-margin-api";
+
+const THREAD = asThreadId("thread-1");
+
+async function typeAndSend(text: string): Promise<void> {
+  await userEvent.type(await screen.findByLabelText("Message"), `${text}{Enter}`);
+}
+
+test("a_plain_enter_message_starts_a_thread_sends_a_context_free_turn_and_streams_the_answer", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+
+  await typeAndSend("what is lr?");
+
+  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: THREAD, question: "what is lr?", contextText: null }]));
+  expect(api.calls.filter((call) => call === "threadStart")).toHaveLength(1);
+  expect(await screen.findByText("what is lr?")).toBeInTheDocument();
+  act(() => api.emitProvider({ type: "delta", threadId: THREAD, turnId: asTurnId("turn-1"), text: "The step size." }));
+  expect(await screen.findByText("The step size.")).toBeInTheDocument();
+});
+
+test("a_second_message_reuses_the_thread_once_the_answer_is_complete", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+  await typeAndSend("first");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => api.emitProvider({ type: "completed", threadId: THREAD, turnId: asTurnId("turn-1"), status: "completed", error: null }));
+
+  await typeAndSend("second");
+
+  await waitFor(() => expect(api.turnStarts.map((start) => [start.threadId, start.question])).toEqual([[THREAD, "first"], [THREAD, "second"]]));
+  expect(api.calls.filter((call) => call === "threadStart")).toHaveLength(1);
+});
+
+test("events_that_arrive_before_turn_start_answers_are_not_lost", async () => {
+  const api = new FakeMarginApi();
+  const original = api.turnStart;
+  api.turnStart = async (threadId, question, contextText) => {
+    const turnId = await original(threadId, question, contextText);
+    api.emitProvider({ type: "delta", threadId, turnId, text: "early text" });
+    return turnId;
+  };
+  render(<App api={api} />);
+
+  await typeAndSend("q");
+
+  expect(await screen.findByText("early text")).toBeInTheDocument();
+});
+
+test("a_rejected_turn_start_shows_the_error_and_the_composer_accepts_the_next_message", async () => {
+  const api = new FakeMarginApi();
+  api.turnStart = async () => {
+    throw new Error("Codex is not running; the app-server has not started or is restarting");
+  };
+  render(<App api={api} />);
+
+  await typeAndSend("q");
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Codex is not running");
+  expect(screen.getByLabelText("Message")).toHaveValue("");
+  await userEvent.type(screen.getByLabelText("Message"), "again");
+  expect(screen.getByLabelText("Message")).toHaveValue("again");
+});
+
+test("selecting_a_stored_chat_opens_it_and_shows_its_messages", async () => {
+  const api = new FakeMarginApi();
+  api.threads = [{ id: asThreadId("old-1"), title: "Fine-tuning plan", updatedAtSec: 5 }];
+  api.histories.set(asThreadId("old-1"), [
+    { turnId: asTurnId("t1"), role: "user", text: "plan?", status: "done" },
+    { turnId: asTurnId("t1"), role: "assistant", text: "Warm up first.", status: "done" },
+  ]);
+  render(<App api={api} />);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Fine-tuning plan" }));
+
+  expect(await screen.findByText("Warm up first.")).toBeInTheDocument();
+  expect(api.calls).toContain("threadOpen:old-1");
+});
+
+test("new_chat_clears_the_main_pane_and_the_next_message_starts_another_thread", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+  await typeAndSend("first");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => api.emitProvider({ type: "completed", threadId: THREAD, turnId: asTurnId("turn-1"), status: "completed", error: null }));
+
+  await userEvent.click(screen.getByRole("button", { name: "+ New chat" }));
+  expect(screen.queryByText("first")).toBeNull();
+  await typeAndSend("fresh");
+
+  await waitFor(() => expect(api.turnStarts[1]?.threadId).toBe("thread-2"));
+});

@@ -3,9 +3,9 @@ import { useEffect, useState, type ReactElement } from "react";
 
 import type { AccountSummary } from "../shared/auth";
 import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
-import { Composer } from "./components/Composer";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
+import { Workspace } from "./workspace";
 
 export type AppProps = Readonly<{ api: MarginApi }>;
 
@@ -40,9 +40,5 @@ export function App({ api }: AppProps): ReactElement | null {
   if (!status.ok) return <StartupError error={status.error} copyText={api.copyText} />;
   if (account === null) return null;
   if (!account.signedIn) return <SignIn api={api} />;
-  return (
-    <main aria-label="Margin">
-      <Composer draft={draft} onDraftChange={setDraft} />
-    </main>
-  );
+  return <Workspace api={api} draft={draft} onDraftChange={setDraft} />;
 }

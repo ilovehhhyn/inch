@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import type { MarginApi } from "../shared/ipc-contract";
 import { App } from "./app";
+import "./theme.css";
 
 declare global {
   interface Window {

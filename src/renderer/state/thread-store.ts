@@ -45,6 +45,12 @@ export class ThreadStore {
     this.notify();
   }
 
+  /** Shows a failure that no provider event reported, such as a rejected `turn/start`. */
+  reportError(threadId: ThreadId, message: string): void {
+    this.views.set(threadId, { ...this.view(threadId), error: message });
+    this.notify();
+  }
+
   apply(event: ProviderEvent): void {
     if (event.type === "accountChanged") return;
     const view = this.view(event.threadId);

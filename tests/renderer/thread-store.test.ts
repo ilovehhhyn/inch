@@ -89,3 +89,13 @@ test("beginning_a_turn_while_another_is_active_is_rejected_and_changes_nothing",
 
   expect(store.view(THREAD)).toBe(before);
 });
+
+test("report_error_shows_the_message_on_the_thread_and_leaves_its_messages_alone", () => {
+  const store = new ThreadStore();
+  store.load(THREAD, [{ turnId: TURN, role: "user", text: "q", status: "done" }]);
+
+  store.reportError(THREAD, "the app-server refused the turn");
+
+  expect(store.view(THREAD).error).toBe("the app-server refused the turn");
+  expect(store.view(THREAD).messages).toHaveLength(1);
+});
