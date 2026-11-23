@@ -51,6 +51,21 @@ if (seedPath !== null) {
   }
 }
 
+function fakeModel(id, isDefault, inputModalities) {
+  const levels = ["low", "medium", "high"];
+  return {
+    id,
+    model: id,
+    displayName: id,
+    description: "",
+    hidden: false,
+    isDefault,
+    supportedReasoningEfforts: levels.map((reasoningEffort) => ({ reasoningEffort, description: "" })),
+    defaultReasoningEffort: "medium",
+    inputModalities,
+  };
+}
+
 function requireThread(id) {
   const thread = threads.get(id);
   if (thread === undefined) throw new Error(`fake-codex has no thread ${id}`);
@@ -92,7 +107,7 @@ function handle(method, params) {
     case "account/read":
       return { account: isSignedOut ? null : { type: "chatgpt", email: "fake@example.com", planType: "plus" }, requiresOpenaiAuth: false };
     case "model/list":
-      return { data: [{ id: "fake-model", model: "fake-model", isDefault: true }], nextCursor: null };
+      return { data: [fakeModel("fake-model", true, ["text", "image"]), fakeModel("fake-text-model", false, ["text"])], nextCursor: null };
     case "thread/start": {
       const thread = { id: `thread-${nextThread++}`, forkedFromId: null, preview: "", updatedAt: clock++, turns: [] };
       threads.set(thread.id, thread);

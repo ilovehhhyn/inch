@@ -148,3 +148,42 @@ export async function stubFolderDialog(app: ElectronApplication, folder: string)
     dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [chosen] });
   }, folder);
 }
+
+/** Speaks `text` with the macOS voice Samantha into a 16 kHz mono WAV file in `directory`. */
+export async function synthesizeSpeechWav(directory: string, text: string): Promise<string> {
+  const aiff = join(directory, "speech.aiff");
+  const wav = join(directory, "speech.wav");
+  await run("say", ["-v", "Samantha", "-o", aiff, text]);
+  await run("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff, wav]);
+  return wav;
+}
+
+/**
+ * Makes the window's microphone play `wavPath`: `getUserMedia` answers with a stream built from the file, so the real recorder
+ * (MediaRecorder, decoding, resampling, WAV writing) runs without a microphone and without the macOS permission prompt.
+ */
+export async function installSyntheticMicrophone(page: Page, wavPath: string): Promise<void> {
+  const base64 = (await readFile(wavPath)).toString("base64");
+  await page.evaluate(async (encoded) => {
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+    const context = new AudioContext();
+    const buffer = await context.decodeAudioData(bytes.buffer);
+    navigator.mediaDevices.getUserMedia = async () => {
+      const destination = context.createMediaStreamDestination();
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(destination);
+      source.start();
+      return destination.stream;
+    };
+  }, base64);
+}
+
+/** Writes a stand-in for whisper-cli that answers `transcript` and keeps a copy of the audio it was given at `copyPath`. */
+export async function writeFakeWhisper(directory: string, transcript: string, copyPath: string): Promise<string> {
+  const path = join(directory, "whisper-cli");
+  const script = ["#!/bin/sh", 'while [ $# -gt 0 ]; do', '  if [ "$1" = "-f" ]; then wav="$2"; fi', "  shift", "done", `cp "$wav" "${copyPath}"`, `echo " ${transcript}"`, ""].join("\n");
+  await writeFile(path, script, "utf8");
+  await chmod(path, 0o755);
+  return path;
+}

@@ -24,7 +24,7 @@ import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
 import { clearStagedAttachments, createAttachmentContent, createAttachmentStore } from "./attachments";
 import { createChoiceStore } from "./choice-store";
-import { fakeMicrophoneSwitches, readFakeMicrophone } from "./fake-microphone";
+import { readAssumedMicrophoneAccess } from "./microphone-access";
 import { createSafeStorageSecretStore } from "./secret-store";
 import { appendLatencyRecord } from "./metrics-store";
 import { createSpeechService, resolveWhisperBinary, resolveWhisperModel } from "./speech/speech-service";
@@ -34,12 +34,8 @@ import { createSupervisedCodexProvider } from "./supervised-codex-provider";
 const claudeBaseUrl = readClaudeBaseUrl(process.env);
 scrubAnthropicVariables(process.env);
 
-/** Read once, before the window exists: end-to-end tests speak into the window through a WAV file instead of a microphone. */
-const fakeMicrophone = readFakeMicrophone(process.env);
-for (const [name, value] of fakeMicrophone === undefined ? [] : fakeMicrophoneSwitches(fakeMicrophone)) {
-  if (value === undefined) app.commandLine.appendSwitch(name);
-  else app.commandLine.appendSwitch(name, value);
-}
+/** Read once at start-up: end-to-end tests skip the macOS prompt, which blocks until a person answers it. */
+const assumesMicrophoneAccess = readAssumedMicrophoneAccess(process.env);
 
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
@@ -216,7 +212,7 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     modelsList: (provider) => providerFor(provider).listModels(),
     choiceRead: (threadId) => choices.read(threadId),
     speechTranscribe: (wav) => speech.transcribeWav(wav),
-    microphoneRequest: async () => (fakeMicrophone !== undefined ? true : systemPreferences.askForMediaAccess("microphone")),
+    microphoneRequest: async () => (assumesMicrophoneAccess ? true : systemPreferences.askForMediaAccess("microphone")),
     attachmentAdd: async (file) => {
       const { id, kind, name, bytes } = await attachments.add(file);
       return { id, kind, name, bytes };
