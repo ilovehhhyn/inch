@@ -4,10 +4,13 @@ import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { App } from "../../src/renderer/app";
-import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
+import type { StartupStatus } from "../../src/shared/ipc-contract";
+import { FakeMarginApi } from "../fakes/fake-margin-api";
 
-function apiWith(status: StartupStatus): MarginApi {
-  return { startupStatus: async () => status, copyText: async () => undefined };
+function apiWith(status: StartupStatus): FakeMarginApi {
+  const api = new FakeMarginApi();
+  api.startup = status;
+  return api;
 }
 
 test("a_startup_error_replaces_the_whole_window", async () => {
@@ -27,11 +30,9 @@ test("a_supported_codex_shows_the_app", async () => {
 });
 
 test("a_failing_startup_check_is_shown_not_left_as_a_blank_window", async () => {
-  const api: MarginApi = {
-    startupStatus: async () => {
-      throw new Error("ipc closed");
-    },
-    copyText: async () => undefined,
+  const api = new FakeMarginApi();
+  api.startupStatus = async () => {
+    throw new Error("ipc closed");
   };
 
   render(<App api={api} />);

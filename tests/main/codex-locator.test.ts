@@ -46,7 +46,7 @@ test("first_codex_in_login_shell_path_order_is_used", async () => {
 
   const located = await locateCodex(services);
 
-  expect(located).toEqual({ codexPath: "/opt/homebrew/bin/codex", version: "0.146.0" });
+  expect(located).toEqual({ codexPath: "/opt/homebrew/bin/codex", version: "0.146.0", loginShellPath: "/opt/homebrew/bin:/usr/local/bin" });
   expect(services.versionRuns).toEqual(["/opt/homebrew/bin/codex"]);
 });
 

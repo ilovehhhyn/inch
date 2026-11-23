@@ -19,7 +19,7 @@ export type StartupServices = Readonly<{
   runCodexVersion(codexPath: string): Promise<string>;
 }>;
 
-export type LocatedCodex = Readonly<{ codexPath: string; version: string }>;
+export type LocatedCodex = Readonly<{ codexPath: string; version: string; loginShellPath: string }>;
 
 function run(file: string, args: ReadonlyArray<string>, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,5 +82,5 @@ export async function locateCodex(services: StartupServices = nodeStartupService
     throw new StartupError({ kind: "codex-version", message: `${codexPath} --version ${cause}; reinstall it with \`${INSTALL_COMMAND}\``, fix: INSTALL_COMMAND });
   }
   requireSupportedCodex(version);
-  return { codexPath, version };
+  return { codexPath, version, loginShellPath: pathValue };
 }
