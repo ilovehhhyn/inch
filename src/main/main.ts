@@ -1,5 +1,5 @@
 // Starts the Electron app: checks Codex, starts one app-server session and opens the single Margin window.
-import { app, BrowserWindow, dialog, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, safeStorage, session, shell, systemPreferences } from "electron";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -24,13 +24,22 @@ import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
 import { clearStagedAttachments, createAttachmentContent, createAttachmentStore } from "./attachments";
 import { createChoiceStore } from "./choice-store";
+import { fakeMicrophoneSwitches, readFakeMicrophone } from "./fake-microphone";
 import { createSafeStorageSecretStore } from "./secret-store";
 import { appendLatencyRecord } from "./metrics-store";
+import { createSpeechService, resolveWhisperBinary, resolveWhisperModel } from "./speech/speech-service";
 import { createSupervisedCodexProvider } from "./supervised-codex-provider";
 
 /** Read once, before the variables are removed: the address of a fake Anthropic service in the end-to-end tests. */
 const claudeBaseUrl = readClaudeBaseUrl(process.env);
 scrubAnthropicVariables(process.env);
+
+/** Read once, before the window exists: end-to-end tests speak into the window through a WAV file instead of a microphone. */
+const fakeMicrophone = readFakeMicrophone(process.env);
+for (const [name, value] of fakeMicrophone === undefined ? [] : fakeMicrophoneSwitches(fakeMicrophone)) {
+  if (value === undefined) app.commandLine.appendSwitch(name);
+  else app.commandLine.appendSwitch(name, value);
+}
 
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
@@ -98,6 +107,32 @@ function createLazyAnt(): () => Promise<AntCli> {
     pending ??= nodeStartupServices.readLoginShellPath().then((path) => createAntCli({ exec: nodeAntExec, environment: buildAntEnvironment(process.env, path) }));
     return pending;
   };
+}
+
+/** `whisper-cli` is found through the login-shell PATH like `ant`; the shell is asked once. */
+function createLazyLoginShellPath(): () => Promise<string> {
+  let pending: Promise<string> | undefined;
+  return () => {
+    pending ??= nodeStartupServices.readLoginShellPath();
+    return pending;
+  };
+}
+
+const readLoginShellPath = createLazyLoginShellPath();
+
+/** The voice settings that tests override, read once; a half-set pair is an error found on the first dictation. */
+const speech = createSpeechService({
+  binary: async () => resolveWhisperBinary({ override: process.env["MARGIN_WHISPER_PATH"], loginShellPath: await readLoginShellPath(), isExecutable: nodeStartupServices.isExecutable }),
+  model: async () => resolveWhisperModel(app.getPath("userData"), { path: process.env["MARGIN_WHISPER_MODEL"], sha256: process.env["MARGIN_WHISPER_MODEL_SHA256"] }),
+});
+
+/** Margin asks only for the microphone; every other web permission is refused. */
+function restrictPermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    const isAudioOnly = "mediaTypes" in details && Array.isArray(details.mediaTypes) && details.mediaTypes.every((type) => type === "audio");
+    callback(permission === "media" && isAudioOnly);
+  });
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === "media");
 }
 
 function providerFor(id: ProviderId): ChatProvider {
@@ -180,6 +215,8 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     claudeSignOut: () => requireClaude().signOut(),
     modelsList: (provider) => providerFor(provider).listModels(),
     choiceRead: (threadId) => choices.read(threadId),
+    speechTranscribe: (wav) => speech.transcribeWav(wav),
+    microphoneRequest: async () => (fakeMicrophone !== undefined ? true : systemPreferences.askForMediaAccess("microphone")),
     attachmentAdd: async (file) => {
       const { id, kind, name, bytes } = await attachments.add(file);
       return { id, kind, name, bytes };
@@ -210,6 +247,7 @@ function registerHandlers(started: Promise<StartedCodex>): void {
 }
 
 void app.whenReady().then(async () => {
+  restrictPermissions();
   await clearStagedAttachments(attachmentsDirectory()); // files staged by a session that ended before sending
   claude = createClaudeServices({
     store: createSafeStorageSecretStore({ safeStorage, directory: join(app.getPath("userData"), "secrets") }),

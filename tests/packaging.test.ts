@@ -28,6 +28,12 @@ test("the builder config builds one arm64 dmg target", () => {
   expect(config.match(/target: /g)).toHaveLength(1);
 });
 
+test("the builder config tells macOS why Margin asks for the microphone", () => {
+  const config = settings("electron-builder.yml");
+
+  expect(config).toMatch(/NSMicrophoneUsageDescription: .*only while you hold the right Option key.*on this Mac/);
+});
+
 test("the ci package job runs on version tags only and uploads without publishing", () => {
   const workflow = read(".github/workflows/ci.yml");
   const job = workflow.slice(workflow.indexOf("  package:"));

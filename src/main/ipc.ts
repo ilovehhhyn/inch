@@ -26,6 +26,8 @@ export type IpcHandlers = Readonly<{
   claudeSignOut: () => Promise<void>;
   modelsList: (provider: ProviderId) => Promise<ReadonlyArray<ModelOption>>;
   choiceRead: (threadId: ThreadId) => Promise<ModelChoice | null>;
+  speechTranscribe: (wav: Uint8Array) => Promise<string>;
+  microphoneRequest: () => Promise<boolean>;
   attachmentAdd: (file: Readonly<{ name: string; bytes: Uint8Array }>) => Promise<AttachmentChip>;
   attachmentDiscard: (id: string) => Promise<void>;
   threadStart: (provider: ProviderId) => Promise<ThreadId>;
@@ -61,6 +63,11 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.claudeSignOut, () => handlers.claudeSignOut());
   ipcMain.handle(IPC_CHANNELS.modelsList, (_event, provider: unknown) => handlers.modelsList(parseProviderId(provider)));
   ipcMain.handle(IPC_CHANNELS.choiceRead, (_event, threadId: unknown) => handlers.choiceRead(asThreadId(requireString(threadId, "threadId"))));
+  ipcMain.handle(IPC_CHANNELS.speechTranscribe, (_event, wav: unknown) => {
+    if (!(wav instanceof Uint8Array)) throw new Error("audio must be a Uint8Array; the window records it before sending");
+    return handlers.speechTranscribe(wav);
+  });
+  ipcMain.handle(IPC_CHANNELS.microphoneRequest, () => handlers.microphoneRequest());
   ipcMain.handle(IPC_CHANNELS.attachmentAdd, (_event, name: unknown, bytes: unknown) => handlers.attachmentAdd(parseAttachmentFile(name, bytes)));
   ipcMain.handle(IPC_CHANNELS.attachmentDiscard, (_event, id: unknown) => handlers.attachmentDiscard(requireString(id, "id")));
   ipcMain.handle(IPC_CHANNELS.threadStart, (_event, provider: unknown) => handlers.threadStart(parseProviderId(provider)));

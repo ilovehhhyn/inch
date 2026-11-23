@@ -14,4 +14,6 @@ mac:
   # `null` skips code signing; without it electron-builder would search the keychain for an identity and sign with the first one it finds.
   identity: null
   hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: Margin records your voice only while you hold the right Option key, and transcribes it on this Mac.
 artifactName: ${productName}-${version}-${arch}.${ext}

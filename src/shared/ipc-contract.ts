@@ -24,6 +24,8 @@ export const IPC_CHANNELS = {
   claudeSignOut: "claude:signOut",
   modelsList: "models:list",
   choiceRead: "choice:read",
+  speechTranscribe: "speech:transcribe",
+  microphoneRequest: "microphone:request",
   attachmentAdd: "attachment:add",
   attachmentDiscard: "attachment:discard",
   threadStart: "thread:start",
@@ -64,6 +66,10 @@ export type MarginApi = Readonly<{
   modelsList(provider: ProviderId): Promise<ReadonlyArray<ModelOption>>;
   /** The model and reasoning level last used in a chat, or null for a chat that has none. */
   choiceRead(threadId: ThreadId): Promise<ModelChoice | null>;
+  /** Transcribes a 16 kHz mono WAV recording on this Mac; "" means no speech was heard, and a missing whisper.cpp or model rejects with the install command. */
+  speechTranscribe(wav: Uint8Array): Promise<string>;
+  /** Asks macOS for microphone access; false when the person said no, now or earlier. */
+  microphoneRequest(): Promise<boolean>;
   /** Copies a file into Margin's attachments folder after checking its content and size; rejects with a message that names the file and the rule. */
   attachmentAdd(name: string, bytes: Uint8Array): Promise<AttachmentChip>;
   /** Removes an attached file the user took off the message. */

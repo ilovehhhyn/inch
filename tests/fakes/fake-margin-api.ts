@@ -111,6 +111,15 @@ export class FakeMarginApi implements MarginApi {
     return models;
   };
   choiceRead = async (threadId: ThreadId): Promise<ModelChoice | null> => this.choices.get(threadId) ?? null;
+  /** What `speechTranscribe` answers, and the recordings it received. */
+  transcript = "does this look right?";
+  readonly recordings: Array<Uint8Array> = [];
+  microphoneGranted = true;
+  speechTranscribe = async (wav: Uint8Array): Promise<string> => {
+    this.recordings.push(wav);
+    return this.transcript;
+  };
+  microphoneRequest = async (): Promise<boolean> => this.microphoneGranted;
   attachmentAdd = async (name: string, bytes: Uint8Array): Promise<AttachmentChip> => {
     const rejection = this.attachmentRejections.get(name);
     if (rejection !== undefined) throw new Error(rejection);
