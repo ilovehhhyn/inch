@@ -3,12 +3,12 @@ import { app, BrowserWindow, dialog, shell } from "electron";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { summarizeAccount, type CodexClient } from "../codex/codex-client";
-import { listChats, summarizeThread, toHistory } from "../codex/thread-history";
 import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
+import type { ChatProvider } from "../shared/chat-provider";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import type { ProviderEvent } from "../shared/provider-events";
+import type { ProviderId } from "../shared/provider-id";
 import { StartupError, type StartupErrorInfo } from "../shared/startup-error";
 import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex, nodeStartupServices } from "./codex-locator";
@@ -18,6 +18,7 @@ import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
 import { appendLatencyRecord } from "./metrics-store";
+import { createSupervisedCodexProvider } from "./supervised-codex-provider";
 
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
@@ -58,6 +59,22 @@ function sendProviderEvent(event: ProviderEvent): void {
 
 type StartedCodex = Readonly<{ supervisor: CodexSupervisor; codexVersion: string }>;
 
+let starting: Promise<StartedCodex> | undefined;
+
+/** The Codex provider: every call goes to the client that is running now, and the supervisor publishes its events. */
+const codex = createSupervisedCodexProvider(async () => {
+  if (starting === undefined) throw new Error("Codex has not started; wait for the window to finish starting");
+  return (await starting).supervisor.ready();
+});
+
+const providers: Readonly<Partial<Record<ProviderId, ChatProvider>>> = { codex: codex.provider };
+
+function providerFor(id: ProviderId): ChatProvider {
+  const provider = providers[id];
+  if (provider === undefined) throw new Error(`provider \`${id}\` is not available in this build; use codex`);
+  return provider;
+}
+
 /** Margin's own empty directory: every thread uses it as `cwd`, so Codex has nothing of the user's to read. */
 async function createEmptyWorkspace(): Promise<string> {
   const path = join(app.getPath("userData"), "empty-workspace");
@@ -91,7 +108,7 @@ async function startCodex(): Promise<StartedCodex> {
       client.onFault(sendFault);
       client.onLoginCompleted((event) => sendToWindows({ type: "loginCompleted", success: event.success, error: event.error }));
     },
-    onEvent: sendProviderEvent,
+    onEvent: codex.publish,
     onRestartFailed: (error) => log(`codex restart failed: ${error.message}`),
     log,
   });
@@ -99,37 +116,28 @@ async function startCodex(): Promise<StartedCodex> {
   return { supervisor, codexVersion: located.version };
 }
 
-function registerHandlers(starting: Promise<StartedCodex>): void {
-  /** The running client; a request made during a restart waits for it instead of failing. */
-  const readyClient = async (): Promise<CodexClient> => (await starting).supervisor.ready();
+function registerHandlers(started: Promise<StartedCodex>): void {
+  /** The running Codex client; a request made during a restart waits for it instead of failing. */
+  const readyClient = async () => (await started).supervisor.ready();
+  codex.provider.onEvent(sendProviderEvent);
   registerIpc({
     startupStatus: async (): Promise<StartupStatus> => {
       try {
-        return { ok: true, codexVersion: (await starting).codexVersion };
+        return { ok: true, codexVersion: (await started).codexVersion };
       } catch (error) {
         if (error instanceof StartupError) return { ok: false, error: error.info };
         throw error;
       }
     },
-    authRead: async () => summarizeAccount(await (await readyClient()).readAccount()),
+    accountRead: (provider) => providerFor(provider).readAccount(),
     authStart: async (kind) => (await readyClient()).startLogin(kind),
     authApiKey: async (apiKey) => (await readyClient()).startApiKeyLogin(apiKey),
     authCancel: async (loginId) => (await readyClient()).cancelLogin(loginId),
     authLogout: async () => (await readyClient()).logout(),
-    threadStart: async () => {
-      const client = await readyClient();
-      return client.startThread({ model: await client.defaultModelId() });
-    },
-    threadOpen: async (threadId) => {
-      const client = await readyClient();
-      await client.resumeThread(threadId, await client.defaultModelId());
-      return toHistory(await client.readThread(threadId));
-    },
-    threadList: async () => listChats(await (await readyClient()).listThreads()).map(summarizeThread),
-    threadFork: async (threadId, lastTurnId) => {
-      const client = await readyClient();
-      return client.forkThread(threadId, lastTurnId, await client.defaultModelId());
-    },
+    threadStart: (provider) => providerFor(provider).startThread(),
+    threadOpen: (provider, threadId) => providerFor(provider).readThread(threadId),
+    threadList: async () => (await Promise.all(Object.values(providers).map((provider) => provider.listThreads()))).flat().sort((left, right) => right.updatedAtSec - left.updatedAtSec),
+    threadFork: (provider, threadId, lastTurnId) => providerFor(provider).forkThread(threadId, lastTurnId),
     chooseDiffFolder: async () => {
       const window = BrowserWindow.getFocusedWindow();
       const options = { title: "Choose a folder for the code diff", properties: ["openDirectory" as const] };
@@ -139,13 +147,11 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
     diffRead: async (folder) => runGitDiff({ folder: requireSavedDiffFolder(folder, (await readLayout(layoutPath())).diffFolder), base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
-    turnStart: async (threadId, question, contextText) => (await readyClient()).startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),
-    turnInterrupt: async (threadId, turnId) => (await readyClient()).interruptTurn(threadId, turnId),
+    turnStart: (provider, threadId, question, context) => providerFor(provider).startTurn(threadId, { question, context }),
+    turnInterrupt: (provider, threadId, turnId) => providerFor(provider).interruptTurn(threadId, turnId),
     metricsAppend: (record) => appendLatencyRecord(metricsPath(), record),
   });
 }
-
-let starting: Promise<StartedCodex> | undefined;
 
 void app.whenReady().then(() => {
   const started = startCodex();

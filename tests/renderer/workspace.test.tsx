@@ -44,8 +44,8 @@ test("a_second_message_reuses_the_thread_once_the_answer_is_complete", async () 
 test("events_that_arrive_before_turn_start_answers_are_not_lost", async () => {
   const api = new FakeMarginApi();
   const original = api.turnStart;
-  api.turnStart = async (threadId, question, contextText) => {
-    const turnId = await original(threadId, question, contextText);
+  api.turnStart = async (provider, threadId, question, contextText) => {
+    const turnId = await original(provider, threadId, question, contextText);
     api.emitProvider({ type: "delta", threadId, turnId, text: "early text" });
     return turnId;
   };
@@ -161,4 +161,43 @@ test("a_successful_send_clears_the_draft", async () => {
   await typeAndSend("hello");
 
   await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
+});
+
+test("a_new_chat_names_its_provider_when_the_thread_starts_and_on_every_turn", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+
+  await typeAndSend("what is lr?");
+
+  await waitFor(() => expect(api.providerCalls).toEqual(["threadStart:codex", "turnStart:codex"]));
+});
+
+test("a_stored_chat_is_opened_and_continued_with_the_provider_of_its_list_entry", async () => {
+  const api = new FakeMarginApi();
+  api.threads = [{ id: asThreadId("claude-1"), provider: "claude", title: "A Claude chat", updatedAtSec: 5 }];
+  api.histories.set(asThreadId("claude-1"), [
+    { turnId: asTurnId("t1"), role: "user", text: "plan?", status: "done" },
+    { turnId: asTurnId("t1"), role: "assistant", text: "Warm up first.", status: "done" },
+  ]);
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "A Claude chat" }));
+  await screen.findByText("Warm up first.");
+
+  await typeAndSend("and then?");
+
+  await waitFor(() => expect(api.providerCalls).toEqual(["threadOpen:claude", "turnStart:claude"]));
+});
+
+test("interrupting_a_turn_names_the_provider_of_its_chat", async () => {
+  const api = new FakeMarginApi();
+  api.threads = [{ id: asThreadId("claude-1"), provider: "claude", title: "A Claude chat", updatedAtSec: 5 }];
+  api.histories.set(asThreadId("claude-1"), []);
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "A Claude chat" }));
+  await typeAndSend("first");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+
+  await userEvent.type(screen.getByLabelText("Message"), "{Escape}");
+
+  await waitFor(() => expect(api.providerCalls).toContain("turnInterrupt:claude"));
 });

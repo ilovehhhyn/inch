@@ -64,7 +64,7 @@ test("open_side_chat_forks_through_the_chosen_turn", async () => {
   await openSideChatOn(1);
 
   expect(api.forks).toEqual([{ threadId: OLD, lastTurnId: "t2" }]);
-  await waitFor(() => expect(api.layoutWrites.at(-1)?.sideChats).toEqual([{ threadId: SIDE, forkedFromTurn: "t2" }]));
+  await waitFor(() => expect(api.layoutWrites.at(-1)?.sideChats).toEqual([{ provider: "codex", threadId: SIDE, forkedFromTurn: "t2" }]));
 });
 
 test("side_chat_answers_stay_in_the_side_chat", async () => {
@@ -109,7 +109,7 @@ test("main_composer_command_i_after_scrolling_the_side_chat_uses_side_chat_conte
 
 test("saved_side_chats_reopen_with_only_their_own_messages_and_only_beside_their_main_chat", async () => {
   const api = apiWithOldChat();
-  api.layout = { ...DEFAULT_LAYOUT, sideChats: [{ threadId: SIDE, forkedFromTurn: asTurnId("t2") }] };
+  api.layout = { ...DEFAULT_LAYOUT, sideChats: [{ provider: "codex", threadId: SIDE, forkedFromTurn: asTurnId("t2") }] };
   api.histories.set(SIDE, [...pair("t1"), ...pair("t2"), ...pair("s1")]);
   await openOldChat(api);
 
@@ -150,7 +150,7 @@ test("two_side_chats_opened_back_to_back_are_both_saved", async () => {
   const api = apiWithOldChat();
   const releases: Array<() => void> = [];
   const forkIds = ["side-1", "side-2"];
-  api.threadFork = (threadId, lastTurnId) =>
+  api.threadFork = (_provider, threadId, lastTurnId) =>
     new Promise((resolve) => {
       const index = api.forks.length;
       api.forks.push({ threadId, lastTurnId });
@@ -166,4 +166,28 @@ test("two_side_chats_opened_back_to_back_are_both_saved", async () => {
 
   await waitFor(() => expect(api.layoutWrites.at(-1)?.sideChats.map((chat) => chat.threadId)).toEqual(["side-1", "side-2"]));
   expect(api.layoutWrites).toHaveLength(2);
+});
+
+test("a_side_chat_uses_the_provider_of_the_chat_it_was_forked_from", async () => {
+  const api = apiWithOldChat();
+  api.threads = [{ id: OLD, provider: "claude", title: "Fine-tuning plan", updatedAtSec: 5 }];
+  await openOldChat(api);
+
+  await openSideChatOn(1);
+  await userEvent.type(within(await sidePane()).getByLabelText("Side chat message"), "what about wd?{Enter}");
+
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  expect(api.providerCalls).toEqual(["threadOpen:claude", "threadFork:claude", "turnStart:claude"]);
+  expect(api.layoutWrites.at(-1)?.sideChats).toEqual([{ provider: "claude", threadId: SIDE, forkedFromTurn: "t2" }]);
+});
+
+test("a_saved_side_chat_reopens_with_the_provider_saved_in_the_layout", async () => {
+  const api = apiWithOldChat();
+  api.layout = { ...DEFAULT_LAYOUT, sideChats: [{ provider: "claude", threadId: SIDE, forkedFromTurn: asTurnId("t2") }] };
+  api.histories.set(SIDE, [...pair("t1"), ...pair("t2"), ...pair("s1")]);
+  await openOldChat(api);
+
+  await within(await sidePane()).findByText("answer s1");
+
+  expect(api.providerCalls).toContain("threadOpen:claude");
 });

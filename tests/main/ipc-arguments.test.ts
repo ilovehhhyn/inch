@@ -1,7 +1,7 @@
 // Invariant: the main process accepts screen context only as a well-formed, bounded MARGIN SCREEN CONTEXT block or null.
 import { expect, test } from "vitest";
 
-import { MAX_CONTEXT_TEXT_CHARS, parseContextText, requireSavedDiffFolder } from "../../src/main/ipc-arguments";
+import { MAX_CONTEXT_TEXT_CHARS, parseContextText, parseScreenContext, requireSavedDiffFolder } from "../../src/main/ipc-arguments";
 import { renderContextBlock } from "../../src/shared/context-format";
 
 const BLOCK = renderContextBlock({ paneKind: "diff", paneTitle: "repo", blocks: [{ label: "train.py line 39", text: "x" }] });
@@ -27,4 +27,16 @@ test("a_diff_folder_other_than_the_saved_one_is_rejected", () => {
   expect(requireSavedDiffFolder("/Users/example/code/repo", "/Users/example/code/repo")).toBe("/Users/example/code/repo");
   expect(() => requireSavedDiffFolder("/etc", "/Users/example/code/repo")).toThrow(/diff folder \/etc is not the folder chosen in Margin/);
   expect(() => requireSavedDiffFolder("/etc", null)).toThrow(/no diff folder has been chosen/);
+});
+
+test("a_well_formed_block_parses_to_a_screen_context_that_renders_back_to_the_same_text", () => {
+  const context = parseScreenContext(BLOCK);
+
+  expect(context).toEqual({ paneKind: "diff", paneTitle: "repo", blocks: [{ label: "train.py line 39", text: "x" }] });
+  expect(context === null ? null : renderContextBlock(context)).toBe(BLOCK);
+});
+
+test("a_null_context_stays_null_and_a_malformed_one_is_rejected_before_parsing", () => {
+  expect(parseScreenContext(null)).toBeNull();
+  expect(() => parseScreenContext("what is lr?")).toThrow(/contextText must be a MARGIN SCREEN CONTEXT block/);
 });

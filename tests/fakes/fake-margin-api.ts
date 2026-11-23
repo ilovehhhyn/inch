@@ -1,9 +1,11 @@
 // A hand-written MarginApi for renderer tests: scripted answers, recorded calls and an emitter for auth events.
 import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "../../src/shared/auth";
+import type { ProviderAccount } from "../../src/shared/chat-provider";
 import { DEFAULT_LAYOUT, type Layout } from "../../src/shared/layout";
 import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../../src/shared/provider-events";
 import type { LatencyRecord } from "../../src/shared/latency-record";
+import type { ProviderId } from "../../src/shared/provider-id";
 import type { StartupErrorInfo } from "../../src/shared/startup-error";
 import type { DisplayMessage, ThreadSummary } from "../../src/shared/thread-history";
 
@@ -17,6 +19,8 @@ export class FakeMarginApi implements MarginApi {
   readonly apiKeys: Array<string> = [];
   /** Every `turn/start` the window sent: the exact arguments, in order. */
   readonly turnStarts: Array<Readonly<{ threadId: ThreadId; question: string; contextText: string | null }>> = [];
+  /** Every provider-scoped call as `<call>:<provider>`, in order, so a test can see which provider a call named. */
+  readonly providerCalls: Array<string> = [];
   readonly latencyRecords: Array<LatencyRecord> = [];
   readonly interrupts: Array<Readonly<{ threadId: ThreadId; turnId: TurnId }>> = [];
   threads: Array<ThreadSummary> = [];
@@ -38,7 +42,12 @@ export class FakeMarginApi implements MarginApi {
 
   startupStatus = async (): Promise<StartupStatus> => this.startup;
   copyText = async (): Promise<void> => undefined;
-  authRead = async (): Promise<AccountSummary> => this.account;
+  /** The Claude account; the OpenAI one is `account`. */
+  claudeAccount: ProviderAccount = { provider: "claude", signedIn: false, label: null };
+  accountRead = async (provider: ProviderId): Promise<ProviderAccount> => {
+    if (provider === "claude") return this.claudeAccount;
+    return { provider: "codex", signedIn: this.account.signedIn, label: this.account.signedIn ? "ChatGPT Plus" : null };
+  };
   authStart = async (kind: LoginKind): Promise<LoginStarted> => {
     this.calls.push(`start:${kind}`);
     return this.loginStarted;
@@ -60,18 +69,21 @@ export class FakeMarginApi implements MarginApi {
     };
   };
 
-  threadStart = async (): Promise<ThreadId> => {
+  threadStart = async (provider: ProviderId): Promise<ThreadId> => {
     this.calls.push("threadStart");
+    this.providerCalls.push(`threadStart:${provider}`);
     const id = this.nextThreadIds.shift();
     if (id === undefined) throw new Error("the fake has no thread id left; add one to nextThreadIds");
     return asThreadId(id);
   };
-  threadOpen = async (threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>> => {
+  threadOpen = async (provider: ProviderId, threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>> => {
     this.calls.push(`threadOpen:${threadId}`);
+    this.providerCalls.push(`threadOpen:${provider}`);
     return this.histories.get(threadId) ?? [];
   };
   threadList = async (): Promise<ReadonlyArray<ThreadSummary>> => this.threads;
-  threadFork = async (threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId> => {
+  threadFork = async (provider: ProviderId, threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId> => {
+    this.providerCalls.push(`threadFork:${provider}`);
     this.forks.push({ threadId, lastTurnId });
     const id = this.nextForkIds.shift();
     if (id === undefined) throw new Error("the fake has no fork id left; add one to nextForkIds");
@@ -89,7 +101,8 @@ export class FakeMarginApi implements MarginApi {
     this.layoutWrites.push(layout);
     this.layout = layout;
   };
-  turnStart = async (threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId> => {
+  turnStart = async (provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId> => {
+    this.providerCalls.push(`turnStart:${provider}`);
     this.turnStarts.push({ threadId, question, contextText });
     this.turnCounter += 1;
     return asTurnId(`turn-${this.turnCounter}`);
@@ -97,7 +110,8 @@ export class FakeMarginApi implements MarginApi {
   metricsAppend = async (record: LatencyRecord): Promise<void> => {
     this.latencyRecords.push(record);
   };
-  turnInterrupt = async (threadId: ThreadId, turnId: TurnId): Promise<void> => {
+  turnInterrupt = async (provider: ProviderId, threadId: ThreadId, turnId: TurnId): Promise<void> => {
+    this.providerCalls.push(`turnInterrupt:${provider}`);
     this.interrupts.push({ threadId, turnId });
   };
   onProviderEvent = (handler: (event: ProviderEvent) => void): (() => void) => {

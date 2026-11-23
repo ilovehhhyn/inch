@@ -1,6 +1,8 @@
 // Names the IPC channels and the API object the preload script gives the renderer; the one place both sides agree.
-import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "./auth";
+import type { AuthEvent, LoginKind, LoginStarted } from "./auth";
+import type { ProviderAccount } from "./chat-provider";
 import type { Layout } from "./layout";
+import type { ProviderId } from "./provider-id";
 import type { LatencyRecord } from "./latency-record";
 import type { ProviderEvent, ThreadId, TurnId } from "./provider-events";
 import type { StartupErrorInfo } from "./startup-error";
@@ -9,7 +11,7 @@ import type { DisplayMessage, ThreadSummary } from "./thread-history";
 export const IPC_CHANNELS = {
   startupStatus: "startup:status",
   copyText: "clipboard:copy",
-  authRead: "auth:read",
+  accountRead: "account:read",
   authStart: "auth:start",
   authApiKey: "auth:apiKey",
   authCancel: "auth:cancel",
@@ -35,19 +37,22 @@ export type StartupStatus = Readonly<{ ok: true; codexVersion: string }> | Reado
 export type MarginApi = Readonly<{
   startupStatus(): Promise<StartupStatus>;
   copyText(text: string): Promise<void>;
-  authRead(): Promise<AccountSummary>;
+  /** The signed-in state of `provider`; it carries a label such as "ChatGPT Plus", never a key, a token or an email. */
+  accountRead(provider: ProviderId): Promise<ProviderAccount>;
+  /** The four calls below sign in to OpenAI through Codex. */
   authStart(kind: LoginKind): Promise<LoginStarted>;
   authApiKey(apiKey: string): Promise<void>;
   authCancel(loginId: string): Promise<void>;
   authLogout(): Promise<void>;
   onAuthChanged(handler: (event: AuthEvent) => void): () => void;
-  /** Starts a thread on the account's default model. */
-  threadStart(): Promise<ThreadId>;
-  /** Resumes a stored thread and returns its messages. */
-  threadOpen(threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>>;
+  /** Starts a thread of `provider` on its default model. */
+  threadStart(provider: ProviderId): Promise<ThreadId>;
+  /** Opens a stored thread of `provider` and returns its messages. */
+  threadOpen(provider: ProviderId, threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>>;
+  /** The chats of every provider that is signed in, newest first, each tagged with its provider. */
   threadList(): Promise<ReadonlyArray<ThreadSummary>>;
-  /** Forks `threadId` through `lastTurnId` into a new thread on the account's default model. */
-  threadFork(threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId>;
+  /** Forks `threadId` through `lastTurnId` into a new thread of the same provider. */
+  threadFork(provider: ProviderId, threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId>;
   /** Opens the folder dialog; null when the user cancels. */
   chooseDiffFolder(): Promise<string | null>;
   /** The `git diff` text of the folder; rejects with a message that names the folder when git fails. */
@@ -55,8 +60,8 @@ export type MarginApi = Readonly<{
   layoutRead(): Promise<Layout>;
   layoutWrite(layout: Layout): Promise<void>;
   /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message. */
-  turnStart(threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId>;
-  turnInterrupt(threadId: ThreadId, turnId: TurnId): Promise<void>;
+  turnStart(provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId>;
+  turnInterrupt(provider: ProviderId, threadId: ThreadId, turnId: TurnId): Promise<void>;
   /** Appends one latency record (numbers only) to metrics.jsonl in Margin's application support folder. */
   metricsAppend(record: LatencyRecord): Promise<void>;
   /** A problem found after start-up that the window must show in full. */

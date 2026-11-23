@@ -100,9 +100,11 @@ test("signed_out_mid_session_returns_to_sign_in", async () => {
   render(<App api={api} />);
   await userEvent.type(await screen.findByLabelText("Message"), "unsent question");
 
-  act(() => api.emit({ type: "account", summary: { signedIn: false } }));
+  api.account = { signedIn: false };
+  act(() => api.emit({ type: "account", summary: api.account }));
   expect(await screen.findByRole("button", { name: "Sign in with ChatGPT" })).toBeInTheDocument();
   expect(screen.queryByLabelText("Message")).toBeNull();
+  api.account = SIGNED_IN_CHATGPT;
   act(() => api.emit({ type: "account", summary: SIGNED_IN_CHATGPT }));
 
   expect(await screen.findByLabelText("Message")).toHaveValue("unsent question");

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { MarginApi } from "../shared/ipc-contract";
 import type { Layout } from "../shared/layout";
 import type { ThreadId, TurnId } from "../shared/provider-events";
+import type { ProviderId } from "../shared/provider-id";
 import { messagesAfterTurn, type ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
-import { Composer } from "./components/Composer";
+import { Composer, type SendMode } from "./components/Composer";
 import { DiffPane } from "./components/DiffPane";
 import { Sidebar } from "./components/Sidebar";
 import { SideChatPane } from "./components/SideChatPane";
@@ -25,6 +26,9 @@ export type WorkspaceProps = Readonly<{
 
 const NEW_CHAT_TITLE = "New chat";
 
+/** A new chat starts on this provider; the sidebar offers a choice once Claude can sign in. */
+const NEW_CHAT_PROVIDER: ProviderId = "codex";
+
 function monotonicClock(): number {
   return performance.now();
 }
@@ -42,6 +46,8 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const openingSideChats = useRef(new Set<ThreadId>());
+  /** The provider of every chat the window knows: chats belong to one provider for good, and side chats use their parent's. */
+  const threadProviders = useRef(new Map<ThreadId, ProviderId>());
   /** The newest layout, and the queue that applies changes to it one at a time, so overlapping saves never start from a stale copy. */
   const latestLayout = useRef<Layout | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -62,8 +68,20 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
   }, []);
 
   const refreshThreads = useCallback(() => {
-    api.threadList().then(setThreads, (error: unknown) => setProblem(`Could not list chats: ${messageOf(error)}`));
+    api.threadList().then(
+      (listed) => {
+        for (const thread of listed) threadProviders.current.set(thread.id, thread.provider);
+        setThreads(listed);
+      },
+      (error: unknown) => setProblem(`Could not list chats: ${messageOf(error)}`),
+    );
   }, [api]);
+
+  const providerOfThread = useCallback((threadId: ThreadId): ProviderId => {
+    const provider = threadProviders.current.get(threadId);
+    if (provider === undefined) throw new Error(`the provider of chat ${threadId} is not known; reopen the chat from the list`);
+    return provider;
+  }, []);
 
   useEffect(() => {
     refreshThreads();
@@ -82,8 +100,9 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     for (const chat of visibleSideChats) {
       if (store.isLoaded(chat.threadId) || openingSideChats.current.has(chat.threadId)) continue;
       openingSideChats.current.add(chat.threadId);
+      threadProviders.current.set(chat.threadId, chat.provider);
       api
-        .threadOpen(chat.threadId)
+        .threadOpen(chat.provider, chat.threadId)
         .then((history) => store.load(chat.threadId, messagesAfterTurn(history, chat.forkedFromTurn)))
         .catch((error: unknown) => store.reportError(chat.threadId, messageOf(error)))
         .finally(() => openingSideChats.current.delete(chat.threadId));
@@ -106,9 +125,11 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
   async function openSideChat(turnId: TurnId): Promise<void> {
     if (mainThread === null) return;
     try {
-      const forkId = await api.threadFork(mainThread, turnId);
+      const provider = providerOfThread(mainThread);
+      const forkId = await api.threadFork(provider, mainThread, turnId);
+      threadProviders.current.set(forkId, provider);
       store.load(forkId, []);
-      await saveLayout((current) => ({ ...current, sideChats: [...current.sideChats, { threadId: forkId, forkedFromTurn: turnId }] }));
+      await saveLayout((current) => ({ ...current, sideChats: [...current.sideChats, { provider, threadId: forkId, forkedFromTurn: turnId }] }));
     } catch (error) {
       report(mainThread, error);
     }
@@ -131,14 +152,29 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     setMainThread(threadId);
     setProblem(null);
     if (store.isLoaded(threadId)) return;
-    api.threadOpen(threadId).then(
+    api.threadOpen(providerOfThread(threadId), threadId).then(
       (history) => store.load(threadId, history),
       (error: unknown) => report(threadId, error),
     );
   }
 
   function interrupt(threadId: ThreadId, turnId: TurnId): void {
-    api.turnInterrupt(threadId, turnId).catch((error: unknown) => report(threadId, error));
+    api.turnInterrupt(providerOfThread(threadId), threadId, turnId).catch((error: unknown) => report(threadId, error));
+  }
+
+  /** Sends in `threadId`, or starts a chat of the new-chat provider when null; the provider is looked up here so a missing one is shown, not thrown. */
+  async function sendIn(threadId: ThreadId | null, question: string, mode: SendMode): Promise<boolean> {
+    let provider: ProviderId;
+    try {
+      provider = threadId === null ? NEW_CHAT_PROVIDER : providerOfThread(threadId);
+    } catch (error) {
+      report(threadId, error);
+      return false;
+    }
+    return sender.send(provider, threadId, question, mode, (started) => {
+      threadProviders.current.set(started, provider);
+      setMainThread(started);
+    });
   }
 
   const mainTitle = threads.find((thread) => thread.id === mainThread)?.title ?? NEW_CHAT_TITLE;
@@ -160,7 +196,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
           <Composer
             draft={draft}
             onDraftChange={onDraftChange}
-            onSend={(question, mode) => sender.send(mainThread, question, mode, setMainThread)}
+            onSend={(question, mode) => sendIn(mainThread, question, mode)}
             onInterrupt={() => {
               if (mainThread !== null && mainView.activeTurn !== null) interrupt(mainThread, mainView.activeTurn);
             }}
@@ -180,7 +216,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
               store={store}
               tracker={tracker}
               isSending={sender.isSending(chat.threadId)}
-              onSend={(threadId, question, mode) => sender.send(threadId, question, mode, setMainThread)}
+              onSend={(threadId, question, mode) => sendIn(threadId, question, mode)}
               onInterrupt={interrupt}
               onRetry={(threadId) => void sender.retry(threadId)}
               onClose={closeSideChat}

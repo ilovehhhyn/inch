@@ -1,7 +1,7 @@
 // Draws the root layout of the window: the startup error, sign-in, or the app, chosen from the account state.
 import { useEffect, useState, type ReactElement } from "react";
 
-import type { AccountSummary } from "../shared/auth";
+import type { ProviderAccount } from "../shared/chat-provider";
 import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
@@ -19,7 +19,7 @@ function crashStatus(error: unknown): StartupStatus {
 
 export function App({ api }: AppProps): ReactElement | null {
   const [status, setStatus] = useState<StartupStatus | null>(null);
-  const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [account, setAccount] = useState<ProviderAccount | null>(null);
   const [draft, setDraft] = useState("");
 
   useEffect(() => {
@@ -31,10 +31,10 @@ export function App({ api }: AppProps): ReactElement | null {
   const isReady = status?.ok === true;
   useEffect(() => {
     if (!isReady) return undefined;
-    api.authRead().then(setAccount, (error: unknown) => setStatus(crashStatus(error)));
+    api.accountRead("codex").then(setAccount, (error: unknown) => setStatus(crashStatus(error)));
     return api.onAuthChanged((event) => {
-      if (event.type === "account") setAccount(event.summary);
-      if (event.type === "loginCompleted" && event.success) api.authRead().then(setAccount, (error: unknown) => setStatus(crashStatus(error)));
+      const isAccountChange = event.type === "account" || (event.type === "loginCompleted" && event.success);
+      if (isAccountChange) api.accountRead("codex").then(setAccount, (error: unknown) => setStatus(crashStatus(error)));
     });
   }, [api, isReady]);
 

@@ -9,9 +9,9 @@ import { DEFAULT_LAYOUT, MAX_PANEL_WIDTH_PX, MIN_PANEL_WIDTH_PX, type Layout } f
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 
 const SAVED: Layout = {
-  version: 1,
+  version: 2,
   diffFolder: "/Users/example/code/repo",
-  sideChats: [{ threadId: asThreadId("thread-2"), forkedFromTurn: asTurnId("turn-4") }],
+  sideChats: [{ provider: "claude", threadId: asThreadId("thread-2"), forkedFromTurn: asTurnId("turn-4") }],
   panelWidthPx: 640,
 };
 
@@ -94,9 +94,32 @@ test("unknown_keys_are_rejected_with_the_file_name", async () => {
 
 test("another_version_is_rejected_with_the_fix", async () => {
   const path = await layoutPath();
-  await writeFile(path, JSON.stringify({ ...SAVED, version: 2 }));
+  await writeFile(path, JSON.stringify({ ...SAVED, version: 3 }));
 
-  await expect(readLayout(path)).rejects.toThrow(new RegExp(`${path}.*version 2.*delete the file`));
+  await expect(readLayout(path)).rejects.toThrow(new RegExp(`${path}.*version 3.*delete the file`));
+});
+
+test("a_version_1_layout_is_read_with_its_side_chats_as_codex_chats", async () => {
+  const path = await layoutPath();
+  await writeFile(path, JSON.stringify({ version: 1, diffFolder: "/Users/example/code/repo", sideChats: [{ threadId: "side-1", forkedFromTurn: "turn-1" }], panelWidthPx: 640 }));
+
+  expect(await readLayout(path)).toEqual({ version: 2, diffFolder: "/Users/example/code/repo", sideChats: [{ provider: "codex", threadId: "side-1", forkedFromTurn: "turn-1" }], panelWidthPx: 640 });
+});
+
+test("a_version_1_side_chat_that_names_a_provider_is_rejected", async () => {
+  const path = await layoutPath();
+  await writeFile(path, JSON.stringify({ version: 1, diffFolder: null, sideChats: [{ provider: "claude", threadId: "side-1", forkedFromTurn: "turn-1" }], panelWidthPx: 640 }));
+
+  await expect(readLayout(path)).rejects.toThrow(new RegExp(`${path}.*unknown key \`provider\``));
+});
+
+test("a_version_2_side_chat_without_a_provider_or_with_an_unknown_one_is_rejected", async () => {
+  const path = await layoutPath();
+  await writeFile(path, JSON.stringify({ ...SAVED, sideChats: [{ threadId: "t", forkedFromTurn: "u" }] }));
+  await expect(readLayout(path)).rejects.toThrow(new RegExp(`${path}.*provider`));
+
+  await writeFile(path, JSON.stringify({ ...SAVED, sideChats: [{ provider: "gemini", threadId: "t", forkedFromTurn: "u" }] }));
+  await expect(readLayout(path)).rejects.toThrow(new RegExp(`${path}.*unknown provider \`gemini\`; expected codex or claude`));
 });
 
 test("text_that_is_not_json_is_rejected_with_the_file_name", async () => {
@@ -111,8 +134,8 @@ test("wrong_field_types_and_out_of_range_widths_are_rejected_on_read_and_on_writ
   const bad: Array<unknown> = [
     { ...SAVED, diffFolder: 5 },
     { ...SAVED, diffFolder: "relative/path" },
-    { ...SAVED, sideChats: [{ threadId: "t", forkedFromTurn: "u", extra: 1 }] },
-    { ...SAVED, sideChats: [{ threadId: "", forkedFromTurn: "u" }] },
+    { ...SAVED, sideChats: [{ provider: "codex", threadId: "t", forkedFromTurn: "u", extra: 1 }] },
+    { ...SAVED, sideChats: [{ provider: "codex", threadId: "", forkedFromTurn: "u" }] },
     { ...SAVED, sideChats: "none" },
     { ...SAVED, panelWidthPx: MIN_PANEL_WIDTH_PX - 1 },
     { ...SAVED, panelWidthPx: MAX_PANEL_WIDTH_PX + 1 },
