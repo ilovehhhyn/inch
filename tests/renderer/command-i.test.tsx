@@ -8,7 +8,7 @@ import { App } from "../../src/renderer/app";
 import { BUSY_HINT } from "../../src/renderer/components/Composer";
 import { renderContextBlock } from "../../src/shared/context-format";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
-import type { HistoryMessage } from "../../src/shared/thread-history";
+import type { DisplayMessage } from "../../src/shared/thread-history";
 import { FakeMarginApi } from "../fakes/fake-margin-api";
 import { installFakeLayout, userScroll } from "../fakes/fake-layout";
 
@@ -21,7 +21,7 @@ beforeEach(() => {
 afterEach(() => restoreLayout());
 
 /** Three question-and-answer pairs: six blocks, `message 1 (user)` to `message 6 (assistant)`. */
-function threeExchanges(): Array<HistoryMessage> {
+function threeExchanges(): Array<DisplayMessage> {
   return [1, 2, 3].flatMap((n) => [
     { turnId: asTurnId(`t${n}`), role: "user" as const, text: `question ${n}`, status: "done" as const },
     { turnId: asTurnId(`t${n}`), role: "assistant" as const, text: `answer ${n}`, status: "done" as const },
@@ -29,7 +29,7 @@ function threeExchanges(): Array<HistoryMessage> {
 }
 
 async function openOldChat(api: FakeMarginApi): Promise<HTMLElement> {
-  api.threads = [{ id: OLD, title: "Fine-tuning plan", updatedAtSec: 5 }];
+  api.threads = [{ id: OLD, provider: "codex", title: "Fine-tuning plan", updatedAtSec: 5 }];
   api.histories.set(OLD, threeExchanges());
   render(<App api={api} />);
   await userEvent.click(await screen.findByRole("button", { name: "Fine-tuning plan" }));
@@ -152,7 +152,7 @@ test("a_message_sent_with_context_resets_the_scrolled_pane_for_the_next_message"
 
 test("text_under_the_composer_and_fade_is_not_sent_as_visible", async () => {
   const api = new FakeMarginApi();
-  api.threads = [{ id: OLD, title: "Fine-tuning plan", updatedAtSec: 5 }];
+  api.threads = [{ id: OLD, provider: "codex", title: "Fine-tuning plan", updatedAtSec: 5 }];
   api.histories.set(OLD, [1, 2, 3, 4, 5].flatMap((n) => [
     { turnId: asTurnId(`t${n}`), role: "user" as const, text: `question ${n}`, status: "done" as const },
     { turnId: asTurnId(`t${n}`), role: "assistant" as const, text: `answer ${n}`, status: "done" as const },

@@ -1,7 +1,7 @@
 // Converts a stored Codex thread into the messages and chat-list entry the window shows, without running anything.
 import { CONTEXT_HEADER_LINE, splitContextBlock } from "../shared/context-format";
 import { asThreadId, asTurnId } from "../shared/provider-events";
-import type { HistoryMessage, ThreadSummary } from "../shared/thread-history";
+import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 import type { Thread } from "./generated/v2/Thread";
 import type { ThreadItem } from "./generated/v2/ThreadItem";
 import type { Turn } from "./generated/v2/Turn";
@@ -24,16 +24,16 @@ function questionOf(storedText: string): string {
   return splitContextBlock(storedText)?.question ?? storedText;
 }
 
-function turnMessages(turn: Turn): Array<HistoryMessage> {
+function turnMessages(turn: Turn): Array<DisplayMessage> {
   if (turn.status === "inProgress") throw new Error(`turn ${turn.id} is still in progress; wait for it to finish before opening the thread`);
   const turnId = asTurnId(turn.id);
-  const messages: Array<HistoryMessage> = [{ turnId, role: "user", text: questionOf(userText(turn.items)), status: "done" }];
+  const messages: Array<DisplayMessage> = [{ turnId, role: "user", text: questionOf(userText(turn.items)), status: "done" }];
   const answer = answerText(turn.items);
   if (answer !== "") messages.push({ turnId, role: "assistant", text: answer, status: turn.status === "failed" ? "failed" : "done" });
   return messages;
 }
 
-export function toHistory(thread: Thread): Array<HistoryMessage> {
+export function toHistory(thread: Thread): Array<DisplayMessage> {
   return thread.turns.flatMap(turnMessages);
 }
 
@@ -48,7 +48,7 @@ function previewTitle(preview: string): string {
 export function summarizeThread(thread: Thread): ThreadSummary {
   const name = thread.name?.trim() ?? "";
   const title = [name, previewTitle(thread.preview)].find((candidate) => candidate !== "") ?? EMPTY_TITLE;
-  return { id: asThreadId(thread.id), title, updatedAtSec: thread.updatedAt };
+  return { id: asThreadId(thread.id), provider: "codex", title, updatedAtSec: thread.updatedAt };
 }
 
 /** The threads that belong in the chat list: forked side chats are left out, and the newest chat comes first. */

@@ -71,7 +71,7 @@ test("a_rejected_turn_start_shows_the_error_and_keeps_the_typed_question", async
 
 test("selecting_a_stored_chat_opens_it_and_shows_its_messages", async () => {
   const api = new FakeMarginApi();
-  api.threads = [{ id: asThreadId("old-1"), title: "Fine-tuning plan", updatedAtSec: 5 }];
+  api.threads = [{ id: asThreadId("old-1"), provider: "codex", title: "Fine-tuning plan", updatedAtSec: 5 }];
   api.histories.set(asThreadId("old-1"), [
     { turnId: asTurnId("t1"), role: "user", text: "plan?", status: "done" },
     { turnId: asTurnId("t1"), role: "assistant", text: "Warm up first.", status: "done" },

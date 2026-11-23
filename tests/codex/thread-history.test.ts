@@ -60,7 +60,7 @@ test("the_title_is_the_thread_name_or_the_first_line_of_the_preview_and_never_em
   expect(summarizeThread(thread([], { preview: "what is lr?\nmore detail" })).title).toBe("what is lr?");
   expect(summarizeThread(thread([], { preview: "   " })).title).toBe("New chat");
   expect(summarizeThread(thread([], { preview: "x".repeat(200) })).title).toHaveLength(60);
-  expect(summarizeThread(thread([], { id: "t9", updatedAt: 7 }))).toMatchObject({ id: "t9", updatedAtSec: 7 });
+  expect(summarizeThread(thread([], { id: "t9", updatedAt: 7 }))).toMatchObject({ id: "t9", provider: "codex", updatedAtSec: 7 });
 });
 
 const CONTEXT = renderContextBlock({ paneKind: "chat", paneTitle: "Plan", blocks: [{ label: "message 2 (assistant)", text: "Warm up for 500 steps." }] });

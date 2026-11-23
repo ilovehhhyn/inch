@@ -5,7 +5,7 @@ import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../../src/shared/provider-events";
 import type { LatencyRecord } from "../../src/shared/latency-record";
 import type { StartupErrorInfo } from "../../src/shared/startup-error";
-import type { HistoryMessage, ThreadSummary } from "../../src/shared/thread-history";
+import type { DisplayMessage, ThreadSummary } from "../../src/shared/thread-history";
 
 export const SIGNED_IN_CHATGPT: AccountSummary = { signedIn: true, accountType: "chatgpt", planType: "plus" };
 
@@ -20,7 +20,7 @@ export class FakeMarginApi implements MarginApi {
   readonly latencyRecords: Array<LatencyRecord> = [];
   readonly interrupts: Array<Readonly<{ threadId: ThreadId; turnId: TurnId }>> = [];
   threads: Array<ThreadSummary> = [];
-  histories = new Map<ThreadId, ReadonlyArray<HistoryMessage>>();
+  histories = new Map<ThreadId, ReadonlyArray<DisplayMessage>>();
   /** Ids handed out by `threadStart` and `turnStart`, in order of use. */
   nextThreadIds: Array<string> = ["thread-1", "thread-2", "thread-3"];
   readonly forks: Array<Readonly<{ threadId: ThreadId; lastTurnId: TurnId }>> = [];
@@ -66,7 +66,7 @@ export class FakeMarginApi implements MarginApi {
     if (id === undefined) throw new Error("the fake has no thread id left; add one to nextThreadIds");
     return asThreadId(id);
   };
-  threadOpen = async (threadId: ThreadId): Promise<ReadonlyArray<HistoryMessage>> => {
+  threadOpen = async (threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>> => {
     this.calls.push(`threadOpen:${threadId}`);
     return this.histories.get(threadId) ?? [];
   };

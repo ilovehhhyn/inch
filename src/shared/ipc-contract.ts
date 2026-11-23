@@ -4,7 +4,7 @@ import type { Layout } from "./layout";
 import type { LatencyRecord } from "./latency-record";
 import type { ProviderEvent, ThreadId, TurnId } from "./provider-events";
 import type { StartupErrorInfo } from "./startup-error";
-import type { HistoryMessage, ThreadSummary } from "./thread-history";
+import type { DisplayMessage, ThreadSummary } from "./thread-history";
 
 export const IPC_CHANNELS = {
   startupStatus: "startup:status",
@@ -44,7 +44,7 @@ export type MarginApi = Readonly<{
   /** Starts a thread on the account's default model. */
   threadStart(): Promise<ThreadId>;
   /** Resumes a stored thread and returns its messages. */
-  threadOpen(threadId: ThreadId): Promise<ReadonlyArray<HistoryMessage>>;
+  threadOpen(threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>>;
   threadList(): Promise<ReadonlyArray<ThreadSummary>>;
   /** Forks `threadId` through `lastTurnId` into a new thread on the account's default model. */
   threadFork(threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId>;

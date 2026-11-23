@@ -18,7 +18,7 @@ test("the_sidebar_lists_every_chat_marks_the_open_one_and_reports_clicks", async
   let newChats = 0;
   render(
     <Sidebar
-      threads={[{ id: A, title: "Fine-tuning plan", updatedAtSec: 2 }, { id: B, title: "Notes on attention", updatedAtSec: 1 }]}
+      threads={[{ id: A, provider: "codex", title: "Fine-tuning plan", updatedAtSec: 2 }, { id: B, provider: "codex", title: "Notes on attention", updatedAtSec: 1 }]}
       selectedId={B}
       onSelect={(id) => selected.push(id)}
       onNewChat={() => {
@@ -38,13 +38,13 @@ test("the_sidebar_lists_every_chat_marks_the_open_one_and_reports_clicks", async
 
 test("the_chat_list_is_read_when_the_window_opens_and_again_when_an_answer_completes", async () => {
   const api = new FakeMarginApi();
-  api.threads = [{ id: A, title: "Fine-tuning plan", updatedAtSec: 2 }];
+  api.threads = [{ id: A, provider: "codex", title: "Fine-tuning plan", updatedAtSec: 2 }];
   render(<App api={api} />);
   await screen.findByRole("button", { name: "Fine-tuning plan" });
   await userEvent.type(screen.getByLabelText("Message"), "hello{Enter}");
   await waitFor(() => expect(api.turnStarts).toHaveLength(1));
 
-  api.threads = [{ id: asThreadId("thread-1"), title: "hello", updatedAtSec: 9 }, ...api.threads];
+  api.threads = [{ id: asThreadId("thread-1"), provider: "codex", title: "hello", updatedAtSec: 9 }, ...api.threads];
   act(() => api.emitProvider({ type: "completed", threadId: asThreadId("thread-1"), turnId: asTurnId("turn-1"), status: "completed", error: null }));
 
   expect(await screen.findByRole("button", { name: "hello" })).toHaveAttribute("aria-current", "page");

@@ -2,9 +2,9 @@
 import { expect, test } from "vitest";
 
 import { asTurnId } from "../../src/shared/provider-events";
-import { messagesAfterTurn, type HistoryMessage } from "../../src/shared/thread-history";
+import { messagesAfterTurn, type DisplayMessage } from "../../src/shared/thread-history";
 
-function pair(turn: string): Array<HistoryMessage> {
+function pair(turn: string): Array<DisplayMessage> {
   return [
     { turnId: asTurnId(turn), role: "user", text: `q ${turn}`, status: "done" },
     { turnId: asTurnId(turn), role: "assistant", text: `a ${turn}`, status: "done" },

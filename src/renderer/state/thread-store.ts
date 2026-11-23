@@ -1,5 +1,5 @@
 // Holds the displayed view of every open thread and feeds provider events to the reducer, including events that outrun their turn.
-import type { HistoryMessage } from "../../shared/thread-history";
+import type { DisplayMessage } from "../../shared/thread-history";
 import type { ProviderEvent, ThreadId, TurnId } from "../../shared/provider-events";
 import { beginTurn, EMPTY_THREAD, reduceThread, type ThreadView } from "./thread-reducer";
 
@@ -28,7 +28,7 @@ export class ThreadStore {
     return this.loaded.has(threadId);
   }
 
-  load(threadId: ThreadId, history: ReadonlyArray<HistoryMessage>): void {
+  load(threadId: ThreadId, history: ReadonlyArray<DisplayMessage>): void {
     const messages = history.map((message) => ({ id: `${message.turnId}:${message.role}`, turnId: message.turnId, role: message.role, text: message.text, status: message.status }));
     this.views.set(threadId, { messages, activeTurn: null, error: null });
     this.loaded.add(threadId);

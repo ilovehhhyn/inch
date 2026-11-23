@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { App } from "../../src/renderer/app";
 import { DEFAULT_LAYOUT } from "../../src/shared/layout";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
-import type { HistoryMessage } from "../../src/shared/thread-history";
+import type { DisplayMessage } from "../../src/shared/thread-history";
 import { FakeMarginApi } from "../fakes/fake-margin-api";
 import { installFakeLayout, userScroll } from "../fakes/fake-layout";
 
@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => restoreLayout());
 
-function pair(turn: string): Array<HistoryMessage> {
+function pair(turn: string): Array<DisplayMessage> {
   return [
     { turnId: asTurnId(turn), role: "user", text: `question ${turn}`, status: "done" },
     { turnId: asTurnId(turn), role: "assistant", text: `answer ${turn}`, status: "done" },
@@ -30,8 +30,8 @@ function pair(turn: string): Array<HistoryMessage> {
 function apiWithOldChat(): FakeMarginApi {
   const api = new FakeMarginApi();
   api.threads = [
-    { id: OLD, title: "Fine-tuning plan", updatedAtSec: 5 },
-    { id: asThreadId("other-1"), title: "Other chat", updatedAtSec: 4 },
+    { id: OLD, provider: "codex", title: "Fine-tuning plan", updatedAtSec: 5 },
+    { id: asThreadId("other-1"), provider: "codex", title: "Other chat", updatedAtSec: 4 },
   ];
   api.histories.set(OLD, [...pair("t1"), ...pair("t2"), ...pair("t3")]);
   api.histories.set(asThreadId("other-1"), pair("u1"));

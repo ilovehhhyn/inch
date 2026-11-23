@@ -5,7 +5,7 @@ import { parseLoginKind, type AccountSummary, type LoginKind, type LoginStarted 
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import { parseLayout, type Layout } from "../shared/layout";
 import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/provider-events";
-import type { HistoryMessage, ThreadSummary } from "../shared/thread-history";
+import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 
 import { parseContextText } from "./ipc-arguments";
 
@@ -17,7 +17,7 @@ export type IpcHandlers = Readonly<{
   authCancel: (loginId: string) => Promise<void>;
   authLogout: () => Promise<void>;
   threadStart: () => Promise<ThreadId>;
-  threadOpen: (threadId: ThreadId) => Promise<ReadonlyArray<HistoryMessage>>;
+  threadOpen: (threadId: ThreadId) => Promise<ReadonlyArray<DisplayMessage>>;
   threadList: () => Promise<ReadonlyArray<ThreadSummary>>;
   threadFork: (threadId: ThreadId, lastTurnId: TurnId) => Promise<ThreadId>;
   chooseDiffFolder: () => Promise<string | null>;
