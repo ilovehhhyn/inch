@@ -263,6 +263,10 @@ void app.whenReady().then(async () => {
   started.catch(() => undefined); // not silent: startupStatus reports the failure to the window
   registerHandlers(started);
   createWindow();
+  speech.warmUp().then(
+    () => log("voice warm-up finished"),
+    (error: unknown) => log(`voice is not ready: ${error instanceof Error ? error.message : String(error)}`), // not an error for someone who never dictates; the first dictation shows the same reason
+  );
 });
 app.on("will-quit", () => {
   void starting?.then(({ supervisor }) => supervisor.stop(), () => undefined); // a failed start has no child to stop

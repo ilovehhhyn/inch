@@ -1,5 +1,5 @@
-// Writes decoded audio as the 16 kHz mono 16-bit PCM WAV file that whisper.cpp reads.
-import { BYTES_PER_SAMPLE, SAMPLE_RATE_HZ } from "../../shared/speech";
+// Writes audio samples as the 16 kHz mono 16-bit PCM WAV file that whisper.cpp reads.
+import { BYTES_PER_SAMPLE, SAMPLE_RATE_HZ } from "./speech";
 
 const HEADER_BYTES = 44;
 const PCM_FORMAT = 1;

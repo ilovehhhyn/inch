@@ -4,11 +4,16 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { BYTES_PER_SAMPLE, MAX_RECORDING_MS, SAMPLE_RATE_HZ } from "../../shared/speech";
+import { encodeWav } from "../../shared/wav";
 import { transcribe, verifyWhisperModel, WHISPER_BASE_EN_SHA256, WHISPER_BINARY_NAME, WHISPER_INSTALL_COMMAND, WHISPER_MODEL_FILE, type ExecFile } from "./transcriber";
 
 const WAV_HEADER_BYTES = 44;
 /** Two minutes of 16 kHz 16-bit mono audio plus the header, and a small allowance for a longer header the browser may write. */
 export const MAX_WAV_BYTES = WAV_HEADER_BYTES + (MAX_RECORDING_MS / 1000) * SAMPLE_RATE_HZ * BYTES_PER_SAMPLE + 4096;
+
+/** The first run on a Mac took 28 s once (measured 2026-11-23, before whisper.cpp had cached its compiled GPU code), so the warm-up gets four times the limit of a dictation. */
+export const WARM_UP_TIMEOUT_MS = 120 * 1000;
+const WARM_UP_SILENCE_MS = 500;
 
 export type WhisperModel = Readonly<{ path: string; sha256: string }>;
 
@@ -50,6 +55,8 @@ export type SpeechServiceOptions = Readonly<{
 export type SpeechService = Readonly<{
   /** Transcribes a 16 kHz mono WAV recording; "" means no speech was heard. */
   transcribeWav: (wav: Uint8Array) => Promise<string>;
+  /** Runs one transcription of silence so the first spoken message does not pay whisper.cpp's start-up cost; rejects when voice cannot run. */
+  warmUp: () => Promise<void>;
 }>;
 
 function requireWav(wav: Uint8Array): void {
@@ -77,20 +84,25 @@ export function createSpeechService(options: SpeechServiceOptions): SpeechServic
     return checked;
   };
 
+  async function run(wav: Uint8Array, timeoutMs: number | undefined): Promise<string> {
+    requireWav(wav);
+    const model = await checkModelOnce();
+    const binary = await options.binary();
+    await mkdir(temporaryRoot, { recursive: true });
+    const folder = await mkdtemp(join(temporaryRoot, "margin-speech-"));
+    try {
+      const wavPath = join(folder, "audio.wav");
+      await writeFile(wavPath, wav, { flag: "wx", mode: 0o600 });
+      return await transcribe(wavPath, { binary, model: model.path, ...(options.exec === undefined ? {} : { exec: options.exec }), ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  }
+
   return {
-    async transcribeWav(wav) {
-      requireWav(wav);
-      const model = await checkModelOnce();
-      const binary = await options.binary();
-      await mkdir(temporaryRoot, { recursive: true });
-      const folder = await mkdtemp(join(temporaryRoot, "margin-speech-"));
-      try {
-        const wavPath = join(folder, "audio.wav");
-        await writeFile(wavPath, wav, { flag: "wx", mode: 0o600 });
-        return await transcribe(wavPath, { binary, model: model.path, ...(options.exec === undefined ? {} : { exec: options.exec }) });
-      } finally {
-        await rm(folder, { recursive: true, force: true });
-      }
+    transcribeWav: (wav) => run(wav, undefined),
+    async warmUp() {
+      await run(encodeWav(new Float32Array((WARM_UP_SILENCE_MS / 1000) * SAMPLE_RATE_HZ)), WARM_UP_TIMEOUT_MS);
     },
   };
 }

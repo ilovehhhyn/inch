@@ -1,7 +1,7 @@
 // Invariant: a recording is written as a 16 kHz mono 16-bit PCM WAV file that whisper.cpp reads: a 44-byte header that states the sizes exactly, then the clamped samples.
 import { expect, test } from "vitest";
 
-import { encodeWav } from "../../src/renderer/voice/wav";
+import { encodeWav } from "../../src/shared/wav";
 import { BYTES_PER_SAMPLE, SAMPLE_RATE_HZ } from "../../src/shared/speech";
 
 function view(bytes: Uint8Array): DataView {

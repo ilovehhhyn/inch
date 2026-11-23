@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { expect, test } from "vitest";
 
-import { createSpeechService, MAX_WAV_BYTES, resolveWhisperBinary, resolveWhisperModel } from "../../src/main/speech/speech-service";
+import { createSpeechService, MAX_WAV_BYTES, resolveWhisperBinary, resolveWhisperModel, WARM_UP_TIMEOUT_MS } from "../../src/main/speech/speech-service";
 import {
   BinaryNotFound,
   ExecTimeout,
@@ -230,4 +230,28 @@ test.each([
 
   expect(calls).toEqual([]);
   expect(await readdir(temporaryRoot)).toEqual([]);
+});
+
+test("warming_up_transcribes_half_a_second_of_silence_with_a_longer_limit_and_leaves_no_file", async () => {
+  const { speech, calls, temporaryRoot } = await service("[BLANK_AUDIO]\n");
+
+  await speech.warmUp();
+
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.timeoutMs).toBe(WARM_UP_TIMEOUT_MS);
+  expect(WARM_UP_TIMEOUT_MS).toBe(120_000);
+  expect(await readdir(temporaryRoot)).toEqual([]);
+});
+
+test("a_warm_up_that_cannot_run_rejects_with_the_reason_so_the_caller_can_log_it", async () => {
+  const model = await modelFile("model bytes");
+  const speech = createSpeechService({
+    binary: async () => {
+      throw new Error("whisper-cli was not found on PATH; install it with `brew install whisper-cpp`");
+    },
+    model: async () => ({ path: model.path, sha256: model.sha256 }),
+    temporaryRoot: await mkdtemp(join(tmpdir(), "margin-speech-root-")),
+  });
+
+  await expect(speech.warmUp()).rejects.toThrow("whisper-cli was not found on PATH");
 });

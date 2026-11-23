@@ -45,7 +45,7 @@ export const nodeExecFile: ExecFile = (file, args, options) =>
     });
   });
 
-export type TranscribeOptions = Readonly<{ binary: string; model: string; exec?: ExecFile }>;
+export type TranscribeOptions = Readonly<{ binary: string; model: string; exec?: ExecFile; timeoutMs?: number }>;
 
 /** The words in whisper's output, one line per segment, joined with single spaces; a run with no speech gives "". */
 function speechIn(stdout: string): string {
@@ -58,11 +58,12 @@ function speechIn(stdout: string): string {
 
 export async function transcribe(wavPath: string, options: TranscribeOptions): Promise<string> {
   const exec = options.exec ?? nodeExecFile;
+  const timeoutMs = options.timeoutMs ?? TRANSCRIBE_TIMEOUT_MS;
   try {
-    const { stdout } = await exec(options.binary, ["-m", options.model, "-f", wavPath, "-nt", "-np", "-l", "en"], { timeoutMs: TRANSCRIBE_TIMEOUT_MS });
+    const { stdout } = await exec(options.binary, ["-m", options.model, "-f", wavPath, "-nt", "-np", "-l", "en"], { timeoutMs });
     return speechIn(stdout);
   } catch (error) {
-    if (error instanceof ExecTimeout) throw new Error(`speech transcription did not finish within ${TRANSCRIBE_TIMEOUT_MS / 1000} s; record a shorter message`);
+    if (error instanceof ExecTimeout) throw new Error(`speech transcription did not finish within ${timeoutMs / 1000} s; record a shorter message`);
     if (error instanceof BinaryNotFound) throw new Error(`${WHISPER_BINARY_NAME} was not found at ${error.binary}; install it with \`${WHISPER_INSTALL_COMMAND}\``);
     throw new Error(`speech transcription failed: ${error instanceof Error ? error.message : String(error)}`);
   }

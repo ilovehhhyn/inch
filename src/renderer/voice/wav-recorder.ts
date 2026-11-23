@@ -1,7 +1,7 @@
 // Records the microphone in the window and returns the audio as a 16 kHz mono WAV, which the browser cannot record directly.
 import { SAMPLE_RATE_HZ } from "../../shared/speech";
+import { encodeWav } from "../../shared/wav";
 import type { Recording } from "./push-to-talk";
-import { encodeWav } from "./wav";
 
 const NO_MICROPHONE = "no microphone was found; connect one and try again";
 
