@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-import { createClaudeThreadStore, type ClaudeThreadFile } from "../../src/claude/claude-thread-store";
+import { createClaudeThreadStore, type ClaudeThreadFile, type StoredMessage } from "../../src/claude/claude-thread-store";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 
 const THREAD = asThreadId("11111111-aaaa-bbbb-cccc-222222222222");
@@ -112,7 +112,7 @@ test.each([
 test("a_file_the_writer_would_reject_is_not_written", async () => {
   const directory = await folder();
 
-  await expect(createClaudeThreadStore(directory).write({ ...SAVED, messages: [SAVED.messages[0] as ClaudeThreadFile["messages"][number], SAVED.messages[0] as ClaudeThreadFile["messages"][number]] })).rejects.toThrow("alternate");
+  await expect(createClaudeThreadStore(directory).write({ ...SAVED, messages: [SAVED.messages[0] as StoredMessage, SAVED.messages[0] as StoredMessage] })).rejects.toThrow("alternate");
 
   expect(await readdir(directory)).toEqual([]);
 });

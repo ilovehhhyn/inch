@@ -7,6 +7,9 @@ import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/prov
 
 export type ClaudeEffort = "low" | "medium";
 
+/** A stored message is the user's or the assistant's; the beta endpoint's system messages are never stored. */
+export type StoredMessage = Anthropic.Beta.BetaUserMessageParam | Anthropic.Beta.BetaAssistantMessageParam;
+
 export type TurnRecord = Readonly<{ turnId: TurnId; userMessageIndex: number }>;
 
 /**
@@ -20,7 +23,7 @@ export type ClaudeThreadFile = Readonly<{
   forkedFrom: ThreadId | null;
   model: string;
   effort: ClaudeEffort;
-  messages: ReadonlyArray<Anthropic.Beta.BetaMessageParam>;
+  messages: ReadonlyArray<StoredMessage>;
   turns: ReadonlyArray<TurnRecord>;
 }>;
 
@@ -60,7 +63,7 @@ function requireText(value: unknown, source: string, name: string): string {
   return value;
 }
 
-function parseMessage(value: unknown, index: number, source: string): Anthropic.Beta.BetaMessageParam {
+function parseMessage(value: unknown, index: number, source: string): StoredMessage {
   if (!isRecord(value)) throw invalid(source, `message ${index} must be an object; delete the file to remove this chat`);
   const role = value["role"];
   if (role !== "user" && role !== "assistant") throw invalid(source, `message ${index} has role ${JSON.stringify(role)}; the role must be user or assistant`);
@@ -71,7 +74,7 @@ function parseMessage(value: unknown, index: number, source: string): Anthropic.
   return role === "user" ? { role, content: content as Anthropic.Beta.BetaUserMessageParam["content"] } : { role, content: content as Anthropic.Beta.BetaAssistantMessageParam["content"] };
 }
 
-function requireAlternation(messages: ReadonlyArray<Anthropic.Beta.BetaMessageParam>, source: string): void {
+function requireAlternation(messages: ReadonlyArray<StoredMessage>, source: string): void {
   if (messages.length > 0 && messages[0]?.role !== "user") throw invalid(source, "must start with a user message; delete the file to remove this chat");
   messages.forEach((message, index) => {
     const expected = index % 2 === 0 ? "user" : "assistant";
@@ -79,7 +82,7 @@ function requireAlternation(messages: ReadonlyArray<Anthropic.Beta.BetaMessagePa
   });
 }
 
-function parseTurn(value: unknown, messages: ReadonlyArray<Anthropic.Beta.BetaMessageParam>, source: string): TurnRecord {
+function parseTurn(value: unknown, messages: ReadonlyArray<StoredMessage>, source: string): TurnRecord {
   if (!isRecord(value)) throw invalid(source, "has a turn that is not an object; delete the file to remove this chat");
   rejectUnknownKeys(value, TURN_KEYS, source);
   const index = value["userMessageIndex"];
