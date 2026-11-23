@@ -34,11 +34,11 @@ test("head_runs_git_diff_against_head_with_fixed_arguments_and_an_explicit_envir
   const diff = calls.at(-1);
   expect(calls.map((call) => call.args.find((arg) => ["config", "rev-parse", "diff"].includes(arg)))).toEqual(["config", "rev-parse", "diff"]);
   expect(diff?.file).toBe("git");
-  expect(diff?.args).toEqual(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3", "HEAD"]);
+  expect(diff?.args).toEqual(["-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3", "HEAD"]);
   for (const call of calls) {
     expect(call.options.timeout).toBe(DIFF_TIMEOUT_MS);
     expect(call.options.maxBuffer).toBe(DIFF_READ_LIMIT_BYTES);
-    expect(Object.keys(call.options.env).sort()).toEqual(["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "LC_ALL", "PATH"]);
+    expect(Object.keys(call.options.env).filter((name) => !name.startsWith("GIT_CONFIG_")).sort()).toEqual(["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "LC_ALL", "PATH"]);
     expect(call.options.env["GIT_TERMINAL_PROMPT"]).toBe("0");
   }
 });
@@ -84,8 +84,13 @@ test("a_relative_folder_is_rejected_before_git_runs", async () => {
   expect(calls).toEqual([]);
 });
 
-test("every_configured_filter_driver_is_blanked_by_name_including_names_with_dots", async () => {
-  const keys = "filter.lfs.clean\nfilter.lfs.smudge\nfilter.lfs.process\nfilter.lfs.required\nfilter.my.driver.clean\n";
+function configOf(env: Readonly<Record<string, string>>): Record<string, string> {
+  const count = Number(env["GIT_CONFIG_COUNT"]);
+  return Object.fromEntries(Array.from({ length: count }, (_, index) => [env[`GIT_CONFIG_KEY_${index}`] ?? "", env[`GIT_CONFIG_VALUE_${index}`] ?? ""]));
+}
+
+test("every_configured_filter_driver_is_blanked_by_name_in_the_environment_including_names_with_dots_and_equals_signs", async () => {
+  const keys = "filter.lfs.clean\nfilter.lfs.smudge\nfilter.lfs.process\nfilter.lfs.required\nfilter.my.driver.clean\nfilter.x=y.clean\n";
   const calls: Array<Call> = [];
   const exec: ExecFile = async (file, args, options) => {
     calls.push({ file, args, options });
@@ -94,11 +99,15 @@ test("every_configured_filter_driver_is_blanked_by_name_including_names_with_dot
 
   await runGitDiff({ folder: FOLDER, base: "HEAD", exec });
 
-  const args = calls.at(-1)?.args ?? [];
-  for (const name of ["lfs", "my.driver"]) {
-    for (const variable of ["clean", "process", "smudge"]) expect(args).toContain(`filter.${name}.${variable}=`);
-    expect(args).toContain(`filter.${name}.required=false`);
+  const last = calls.at(-1);
+  const config = configOf(last?.options.env ?? {});
+  for (const name of ["lfs", "my.driver", "x=y"]) {
+    for (const variable of ["clean", "process", "smudge"]) expect(config[`filter.${name}.${variable}`]).toBe("");
+    expect(config[`filter.${name}.required`]).toBe("false");
   }
+  expect(config["core.fsmonitor"]).toBe("false");
+  expect(config["core.quotePath"]).toBe("false");
+  expect(last?.args.some((arg) => arg.startsWith("filter."))).toBe(false);
 });
 
 test("a_repository_without_filter_drivers_is_not_an_error", async () => {
@@ -205,4 +214,35 @@ test("a_repository_with_no_commits_diffs_its_staged_files_against_the_empty_tree
 
   expect(text).toContain("diff --git a/a.txt b/a.txt");
   expect(text).toContain("+hello");
+});
+
+test("a_filter_driver_whose_name_contains_an_equals_sign_does_not_run", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "margin-git-"));
+  const git = (...args: Array<string>) => run("git", ["-C", folder, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args]);
+  await git("init", "-q");
+  await writeFile(join(folder, ".gitattributes"), "*.txt filter=x=y\n");
+  await writeFile(join(folder, "a.txt"), "one\n");
+  await git("add", ".");
+  await git("commit", "-q", "-m", "first");
+  const marker = join(folder, "EQUALS_RAN");
+  await git("config", "filter.x=y.clean", `sh -c 'touch ${marker}; cat'`);
+  await writeFile(join(folder, "a.txt"), "two\n");
+
+  const text = await runGitDiff({ folder, base: "HEAD" });
+
+  expect(text).toContain("+two");
+  expect(await markerExists(marker)).toBe(false);
+});
+
+test("a_git_failure_other_than_no_commit_yet_is_an_error_and_not_an_empty_tree_diff", async () => {
+  const calls: Array<ReadonlyArray<string>> = [];
+  const exec: ExecFile = async (_file, args) => {
+    calls.push(args);
+    if (args.includes("rev-parse")) throw Object.assign(new Error("Command failed"), { code: 128, stderr: "fatal: bad object HEAD\n" });
+    return { stdout: "", stderr: "" };
+  };
+
+  await expect(runGitDiff({ folder: FOLDER, base: "HEAD", exec })).rejects.toThrow(`git diff failed in ${FOLDER}: fatal: bad object HEAD`);
+
+  expect(calls.some((args) => args.includes("diff"))).toBe(false);
 });

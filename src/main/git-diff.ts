@@ -39,9 +39,24 @@ export function filterDriverNames(configKeys: string): Array<string> {
   return [...names].sort();
 }
 
-/** `-c` arguments that blank every command of every configured filter driver and drop `required`, so that no driver runs and none fails the diff. */
-function disableFilters(names: ReadonlyArray<string>): Array<string> {
-  return names.flatMap((name) => ["clean", "process", "smudge"].flatMap((variable) => ["-c", `filter.${name}.${variable}=`]).concat(["-c", `filter.${name}.required=false`]));
+type ConfigPair = Readonly<{ key: string; value: string }>;
+
+/** Settings that blank every command of every configured filter driver and drop `required`, so that no driver runs and none fails the diff. */
+function disableFilters(names: ReadonlyArray<string>): Array<ConfigPair> {
+  return names.flatMap((name) => [...["clean", "process", "smudge"].map((variable) => ({ key: `filter.${name}.${variable}`, value: "" })), { key: `filter.${name}.required`, value: "false" }]);
+}
+
+/**
+ * Config overrides travel as `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` (git 2.31 or later), because
+ * `-c name=value` splits at the first `=` and a driver name may contain one.
+ */
+function withConfig(env: Readonly<Record<string, string>>, pairs: ReadonlyArray<ConfigPair>): Record<string, string> {
+  const configured: Record<string, string> = { ...env, GIT_CONFIG_COUNT: String(pairs.length) };
+  pairs.forEach((pair, index) => {
+    configured[`GIT_CONFIG_KEY_${index}`] = pair.key;
+    configured[`GIT_CONFIG_VALUE_${index}`] = pair.value;
+  });
+  return configured;
 }
 
 async function configuredFilterNames(git: GitRunner): Promise<Array<string>> {
@@ -58,12 +73,16 @@ async function emptyTree(git: GitRunner): Promise<string> {
   return (await git(["hash-object", "-t", "tree", "/dev/null"])).trim();
 }
 
+/** Git exits with 1 when `rev-parse --verify --quiet` finds no such commit; any other failure is a real error. */
+const GIT_NO_SUCH_COMMIT = 1;
+
 async function hasCommits(git: GitRunner): Promise<boolean> {
   try {
     await git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
     return true;
-  } catch {
-    return false; // exit 1 means HEAD names no commit yet
+  } catch (error) {
+    if (typeof error === "object" && error !== null && (error as Record<string, unknown>)["code"] === GIT_NO_SUCH_COMMIT) return false;
+    throw error;
   }
 }
 
@@ -75,8 +94,8 @@ async function hasCommits(git: GitRunner): Promise<boolean> {
  * explicit prefixes and `core.quotePath=false` keep the header form the parser reads whatever `diff.noprefix` or
  * `diff.mnemonicPrefix` the user set.
  */
-function gitArguments(folder: string, base: DiffBase, filterNames: ReadonlyArray<string>, revision: string): Array<string> {
-  const args = ["-c", "core.fsmonitor=false", "-c", "core.quotePath=false", ...disableFilters(filterNames), "-C", folder, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3"];
+function gitArguments(folder: string, base: DiffBase, revision: string): Array<string> {
+  const args = ["-C", folder, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3"];
   return [...args, base === "staged" ? "--staged" : revision];
 }
 
@@ -93,12 +112,13 @@ export async function runGitDiff(options: GitDiffOptions): Promise<string> {
   const { folder, base, exec = nodeExecFile } = options;
   if (!isAbsolute(folder)) throw new Error(`folder must be an absolute path, got \`${folder}\`; choose the folder with the folder dialog`);
   const env = { PATH: GIT_SEARCH_PATH, HOME: homedir(), LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
-  const execOptions: ExecOptions = { timeout: DIFF_TIMEOUT_MS, maxBuffer: DIFF_READ_LIMIT_BYTES, env, encoding: "utf8" };
-  const git: GitRunner = async (args) => (await exec("git", ["-c", "core.fsmonitor=false", "-C", folder, ...args], execOptions)).stdout;
+  const baseConfig: ReadonlyArray<ConfigPair> = [{ key: "core.fsmonitor", value: "false" }, { key: "core.quotePath", value: "false" }];
+  const optionsWith = (pairs: ReadonlyArray<ConfigPair>): ExecOptions => ({ timeout: DIFF_TIMEOUT_MS, maxBuffer: DIFF_READ_LIMIT_BYTES, env: withConfig(env, pairs), encoding: "utf8" });
+  const git: GitRunner = async (args) => (await exec("git", ["-C", folder, ...args], optionsWith(baseConfig))).stdout;
   try {
     const filterNames = await configuredFilterNames(git);
     const revision = base === "HEAD" && !(await hasCommits(git)) ? await emptyTree(git) : "HEAD";
-    const { stdout } = await exec("git", gitArguments(folder, base, filterNames, revision), execOptions);
+    const { stdout } = await exec("git", gitArguments(folder, base, revision), optionsWith([...baseConfig, ...disableFilters(filterNames)]));
     return stdout;
   } catch (error) {
     throw failure(folder, error);
