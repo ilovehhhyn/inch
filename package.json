@@ -16,6 +16,7 @@
     "bindings:check": "bash scripts/generate-codex-bindings.sh --check"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.12.0",
     "electron": "45.4.1",
     "geist": "1.9.2",
     "react": "19.3.1",
