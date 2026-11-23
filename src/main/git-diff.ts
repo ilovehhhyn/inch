@@ -99,6 +99,30 @@ function gitArguments(folder: string, base: DiffBase, revision: string): Array<s
   return [...args, base === "staged" ? "--staged" : revision];
 }
 
+/** The first git release that reads `GIT_CONFIG_COUNT`, which the filter overrides need. */
+const MIN_GIT_MAJOR = 2;
+const MIN_GIT_MINOR = 31;
+const GIT_UPGRADE_FIX = "brew install git";
+
+/** The installed git cannot be used; its message already names the fix, so it is shown without the folder prefix. */
+export class GitVersionError extends Error {}
+
+export function parseGitVersion(output: string): Readonly<{ major: number; minor: number }> {
+  const match = /^git version (\d+)\.(\d+)/.exec(output.trim());
+  if (match?.[1] === undefined || match[2] === undefined) throw new GitVersionError(`cannot read the git version from \`${output.trim()}\`; run \`git --version\` in a terminal and install git with \`${GIT_UPGRADE_FIX}\``);
+  return { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+/** Exec functions whose git was found new enough; the check runs once per session, not per diff. */
+const checkedGits = new WeakSet<ExecFile>();
+
+async function requireSupportedGit(exec: ExecFile, options: ExecOptions): Promise<void> {
+  if (checkedGits.has(exec)) return;
+  const { major, minor } = parseGitVersion((await exec("git", ["--version"], options)).stdout);
+  if (major < MIN_GIT_MAJOR || (major === MIN_GIT_MAJOR && minor < MIN_GIT_MINOR)) throw new GitVersionError(`Margin needs git ${MIN_GIT_MAJOR}.${MIN_GIT_MINOR} or later; run \`${GIT_UPGRADE_FIX}\``);
+  checkedGits.add(exec);
+}
+
 function failure(folder: string, error: unknown): Error {
   const details = typeof error === "object" && error !== null ? (error as Record<string, unknown>) : {}; // a failed child process carries `killed`, `code` and `stderr`
   if (details["code"] === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return new Error(`git diff in ${folder} printed more than ${DIFF_READ_LIMIT_BYTES / (1024 * 1024)} MiB; narrow the diff to fewer files`);
@@ -115,6 +139,11 @@ export async function runGitDiff(options: GitDiffOptions): Promise<string> {
   const baseConfig: ReadonlyArray<ConfigPair> = [{ key: "core.fsmonitor", value: "false" }, { key: "core.quotePath", value: "false" }];
   const optionsWith = (pairs: ReadonlyArray<ConfigPair>): ExecOptions => ({ timeout: DIFF_TIMEOUT_MS, maxBuffer: DIFF_READ_LIMIT_BYTES, env: withConfig(env, pairs), encoding: "utf8" });
   const git: GitRunner = async (args) => (await exec("git", ["-C", folder, ...args], optionsWith(baseConfig))).stdout;
+  try {
+    await requireSupportedGit(exec, optionsWith(baseConfig));
+  } catch (error) {
+    throw error instanceof GitVersionError ? error : failure(folder, error);
+  }
   try {
     const filterNames = await configuredFilterNames(git);
     const revision = base === "HEAD" && !(await hasCommits(git)) ? await emptyTree(git) : "HEAD";

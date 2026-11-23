@@ -7,12 +7,14 @@ import { promisify } from "node:util";
 import { expect, test } from "vitest";
 
 import { parseUnifiedDiff } from "../../src/renderer/diff/parse-unified-diff";
-import { DIFF_READ_LIMIT_BYTES, DIFF_TIMEOUT_MS, runGitDiff, type ExecFile } from "../../src/main/git-diff";
+import { DIFF_READ_LIMIT_BYTES, DIFF_TIMEOUT_MS, parseGitVersion, runGitDiff, type ExecFile } from "../../src/main/git-diff";
 
 const run = promisify(nodeExecFile);
 const FOLDER = "/Users/example/code/repo";
 
 type Call = Readonly<{ file: string; args: ReadonlyArray<string>; options: Parameters<ExecFile>[2] }>;
+
+const GIT_VERSION_OUTPUT = { stdout: "git version 2.53.0\n", stderr: "" };
 
 function recording(result: Readonly<{ stdout: string; stderr: string }>): { exec: ExecFile; calls: Array<Call> } {
   const calls: Array<Call> = [];
@@ -20,7 +22,7 @@ function recording(result: Readonly<{ stdout: string; stderr: string }>): { exec
     calls,
     exec: async (file, args, options) => {
       calls.push({ file, args, options });
-      return result;
+      return args[0] === "--version" ? GIT_VERSION_OUTPUT : result;
     },
   };
 }
@@ -32,7 +34,7 @@ test("head_runs_git_diff_against_head_with_fixed_arguments_and_an_explicit_envir
 
   expect(text).toBe("diff text");
   const diff = calls.at(-1);
-  expect(calls.map((call) => call.args.find((arg) => ["config", "rev-parse", "diff"].includes(arg)))).toEqual(["config", "rev-parse", "diff"]);
+  expect(calls.map((call) => call.args.find((arg) => ["--version", "config", "rev-parse", "diff"].includes(arg)))).toEqual(["--version", "config", "rev-parse", "diff"]);
   expect(diff?.file).toBe("git");
   expect(diff?.args).toEqual(["-C", FOLDER, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "-U3", "HEAD"]);
   for (const call of calls) {
@@ -94,6 +96,7 @@ test("every_configured_filter_driver_is_blanked_by_name_in_the_environment_inclu
   const calls: Array<Call> = [];
   const exec: ExecFile = async (file, args, options) => {
     calls.push({ file, args, options });
+    if (args[0] === "--version") return GIT_VERSION_OUTPUT;
     return { stdout: args.includes("--get-regexp") ? keys : "", stderr: "" };
   };
 
@@ -112,6 +115,7 @@ test("every_configured_filter_driver_is_blanked_by_name_in_the_environment_inclu
 
 test("a_repository_without_filter_drivers_is_not_an_error", async () => {
   const exec: ExecFile = async (_file, args) => {
+    if (args[0] === "--version") return GIT_VERSION_OUTPUT;
     if (args.includes("--get-regexp")) throw Object.assign(new Error("Command failed"), { code: 1, stderr: "" });
     return { stdout: "ok", stderr: "" };
   };
@@ -238,6 +242,7 @@ test("a_git_failure_other_than_no_commit_yet_is_an_error_and_not_an_empty_tree_d
   const calls: Array<ReadonlyArray<string>> = [];
   const exec: ExecFile = async (_file, args) => {
     calls.push(args);
+    if (args[0] === "--version") return GIT_VERSION_OUTPUT;
     if (args.includes("rev-parse")) throw Object.assign(new Error("Command failed"), { code: 128, stderr: "fatal: bad object HEAD\n" });
     return { stdout: "", stderr: "" };
   };
@@ -245,4 +250,37 @@ test("a_git_failure_other_than_no_commit_yet_is_an_error_and_not_an_empty_tree_d
   await expect(runGitDiff({ folder: FOLDER, base: "HEAD", exec })).rejects.toThrow(`git diff failed in ${FOLDER}: fatal: bad object HEAD`);
 
   expect(calls.some((args) => args.includes("diff"))).toBe(false);
+});
+
+test("parse_git_version_reads_plain_and_apple_builds_and_rejects_text_it_does_not_know", () => {
+  expect(parseGitVersion("git version 2.53.0\n")).toEqual({ major: 2, minor: 53 });
+  expect(parseGitVersion("git version 2.39.3 (Apple Git-146)\n")).toEqual({ major: 2, minor: 39 });
+  expect(() => parseGitVersion("hello")).toThrow("cannot read the git version from `hello`; run `git --version` in a terminal and install git with `brew install git`");
+});
+
+test("a_git_older_than_2_31_is_refused_before_any_other_git_call", async () => {
+  for (const version of ["git version 2.30.9", "git version 1.9.1"]) {
+    const calls: Array<ReadonlyArray<string>> = [];
+    const exec: ExecFile = async (_file, args) => {
+      calls.push(args);
+      return { stdout: version, stderr: "" };
+    };
+
+    await expect(runGitDiff({ folder: FOLDER, base: "HEAD", exec })).rejects.toThrow(new Error("Margin needs git 2.31 or later; run `brew install git`"));
+
+    expect(calls).toEqual([["--version"]]);
+  }
+});
+
+test("git_2_31_is_accepted_and_the_version_is_asked_once_per_exec_function", async () => {
+  const calls: Array<ReadonlyArray<string>> = [];
+  const exec: ExecFile = async (_file, args) => {
+    calls.push(args);
+    return { stdout: args[0] === "--version" ? "git version 2.31.0" : "", stderr: "" };
+  };
+
+  await runGitDiff({ folder: FOLDER, base: "staged", exec });
+  await runGitDiff({ folder: FOLDER, base: "staged", exec });
+
+  expect(calls.filter((args) => args[0] === "--version")).toHaveLength(1);
 });
