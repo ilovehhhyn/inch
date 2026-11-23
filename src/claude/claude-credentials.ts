@@ -71,9 +71,21 @@ export function betasFor(credential: ClaudeCredential, requested: ReadonlyArray<
   return credential.kind === "antProfile" && ANT_TOKEN_NEEDS_OAUTH_BETA ? [...requested, OAUTH_BETA] : [...requested];
 }
 
-/** Asks Anthropic for the model list, which uses no tokens, to find out whether `apiKey` is accepted. */
-export async function checkApiKey(apiKey: string, options: ClaudeClientOptions = {}): Promise<void> {
-  await createClaudeClient({ kind: "apiKey", apiKey }, options).models.list();
+/** Retrieves each model in `modelIds`; Anthropic answers an unknown or unusable model with "not found", which names the model, and a rejected key stays an authentication error. */
+export async function requireModelsAvailable(client: Anthropic, modelIds: ReadonlyArray<string>): Promise<void> {
+  for (const id of modelIds) {
+    try {
+      await client.models.retrieve(id);
+    } catch (error) {
+      if (error instanceof Anthropic.NotFoundError) throw new Error(`Claude model \`${id}\` is not available to this account; sign in with an account that can use it, or remove it from CLAUDE_MODELS`);
+      throw error;
+    }
+  }
+}
+
+/** Asks Anthropic for each offered model, which uses no tokens, to find out whether `apiKey` is accepted and the models are usable. */
+export async function checkApiKey(apiKey: string, options: ClaudeClientOptions, modelIds: ReadonlyArray<string>): Promise<void> {
+  await requireModelsAvailable(createClaudeClient({ kind: "apiKey", apiKey }, options), modelIds);
 }
 
 function describeKeyCheckFailure(error: unknown, apiKey: string): Error {
@@ -87,7 +99,7 @@ function describeKeyCheckFailure(error: unknown, apiKey: string): Error {
 export async function signInWithApiKey(store: SecretStore, apiKey: string, validate: (apiKey: string) => Promise<void>, log: Logger = () => undefined): Promise<void> {
   const key = apiKey.trim();
   if (key === "") throw new Error(MISSING_KEY);
-  log("claude sign-in: checking the API key with the model list");
+  log("claude sign-in: checking the API key and the offered models");
   try {
     await validate(key);
   } catch (error) {

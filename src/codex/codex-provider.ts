@@ -1,6 +1,7 @@
 // Implements the ChatProvider interface over a CodexClient, so the rest of the app never sees the app-server protocol.
 import type { ChatProvider, ProviderAccount } from "../shared/chat-provider";
 import { renderContextBlock } from "../shared/context-format";
+import { requireModelChoice } from "../shared/models";
 import type { AccountSummary } from "../shared/auth";
 import { summarizeAccount, type CodexClient } from "./codex-client";
 import { listChats, summarizeThread, toHistory } from "./thread-history";
@@ -29,8 +30,10 @@ export function createCodexProvider(client: CodexClient): ChatProvider {
     async forkThread(threadId, lastTurnId) {
       return client.forkThread(threadId, lastTurnId, await client.defaultModelId());
     },
-    startTurn(threadId, input) {
-      return client.startTurn(threadId, { question: input.question, context: input.context === null ? null : { text: renderContextBlock(input.context) } });
+    listModels: () => client.listModels(),
+    async startTurn(threadId, input) {
+      requireModelChoice(await client.listModels(), { model: input.model, reasoning: input.reasoning });
+      return client.startTurn(threadId, { question: input.question, context: input.context === null ? null : { text: renderContextBlock(input.context) }, model: input.model, effort: input.reasoning });
     },
     interruptTurn: (threadId, turnId) => client.interruptTurn(threadId, turnId),
     async readThread(threadId) {

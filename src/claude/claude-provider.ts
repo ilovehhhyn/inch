@@ -4,17 +4,22 @@ import { randomUUID } from "node:crypto";
 
 import type { ChatProvider, ProviderAccount, TurnInput } from "../shared/chat-provider";
 import { renderContextBlock } from "../shared/context-format";
+import { requireModelChoice, type ModelOption } from "../shared/models";
 import { MARGIN_INSTRUCTIONS } from "../shared/margin-instructions";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 import { betasFor, claudeAccountOf, createClaudeClient, type ClaudeClientOptions, type ClaudeCredential } from "./claude-credentials";
-import type { ClaudeEffort, ClaudeThreadFile, ClaudeThreadStore, StoredMessage } from "./claude-thread-store";
+import { CLAUDE_EFFORTS, parseClaudeEffort, type ClaudeEffort, type ClaudeThreadFile, type ClaudeThreadStore, type StoredMessage } from "./claude-thread-store";
 
 export const CLAUDE_DEFAULT_MODEL = "claude-opus-5-5";
 /** Provisional: the plan picks the lower effort unless its answers are wrong on the latency probe, and the probe has not run (docs/spikes/claude.md). */
 export const CLAUDE_DEFAULT_EFFORT: ClaudeEffort = "low";
 /** The output bound with streaming (bundled Claude API reference); thinking tokens count toward it. */
 export const CLAUDE_MAX_TOKENS = 64_000;
+/** The models Margin offers for Claude; each is checked against `models.retrieve` at sign-in, and Helen adds any further model here. */
+export const CLAUDE_MODELS: ReadonlyArray<ModelOption> = [
+  { provider: "claude", id: CLAUDE_DEFAULT_MODEL, label: "Claude Opus 5.5", reasoningLevels: CLAUDE_EFFORTS, defaultReasoning: CLAUDE_DEFAULT_EFFORT, acceptsImages: true, acceptsPdfs: true },
+];
 export const SERVER_SIDE_FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 export const NOT_SIGNED_IN = "Claude is not signed in; sign in from the Accounts page";
@@ -150,6 +155,9 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
     async readAccount(): Promise<ProviderAccount> {
       return claudeAccountOf(await options.credentials());
     },
+    async listModels() {
+      return CLAUDE_MODELS;
+    },
     async startThread() {
       const threadId = asThreadId(createId());
       unsaved.set(threadId, { version: 1, threadId, forkedFrom: null, model: CLAUDE_DEFAULT_MODEL, effort: CLAUDE_DEFAULT_EFFORT, messages: [], turns: [] });
@@ -168,9 +176,10 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
     async startTurn(threadId: ThreadId, input: TurnInput) {
       if (input.question.trim() === "") throw new Error("question must not be empty");
       if (active.has(threadId)) throw new Error("a turn is already running in this chat; wait for the answer or stop it first");
+      requireModelChoice(CLAUDE_MODELS, { model: input.model, reasoning: input.reasoning });
       const credential = await options.credentials();
       if (credential === null) throw new Error(NOT_SIGNED_IN);
-      const file = await load(threadId);
+      const file: ClaudeThreadFile = { ...(await load(threadId)), model: input.model, effort: parseClaudeEffort(input.reasoning) };
       const content: Array<Anthropic.Beta.BetaTextBlockParam> = [...(input.context === null ? [] : [{ type: "text" as const, text: renderContextBlock(input.context) }]), { type: "text", text: input.question }];
       const turn: ActiveTurn = { turnId: asTurnId(createId()), controller: new AbortController(), shownText: "", isInterrupted: false };
       active.set(threadId, turn);

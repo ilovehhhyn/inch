@@ -5,7 +5,17 @@ import { join } from "node:path";
 
 import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/provider-events";
 
-export type ClaudeEffort = "low" | "medium";
+/** The levels `output_config.effort` accepts on `claude-opus-5-5` (bundled Claude API reference, thinking table). */
+export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+export type ClaudeEffort = (typeof CLAUDE_EFFORTS)[number];
+
+/** Narrows a reasoning level to a Claude effort, or fails naming the accepted levels. */
+export function parseClaudeEffort(value: unknown): ClaudeEffort {
+  const found = CLAUDE_EFFORTS.find((effort) => effort === value);
+  if (found === undefined) throw new Error(`effort ${JSON.stringify(value)} is not a Claude effort; use ${CLAUDE_EFFORTS.join(", ")}`);
+  return found;
+}
 
 /** A stored message is the user's or the assistant's; the beta endpoint's system messages are never stored. */
 export type StoredMessage = Anthropic.Beta.BetaUserMessageParam | Anthropic.Beta.BetaAssistantMessageParam;
@@ -100,8 +110,8 @@ export function parseClaudeThreadFile(value: unknown, source: string, expectedId
   if (threadId !== expectedId) throw invalid(source, `names threadId ${threadId} but its file name says ${expectedId}; delete the file to remove this chat`);
   const forkedFrom = value["forkedFrom"];
   if (forkedFrom !== null && typeof forkedFrom !== "string") throw invalid(source, "has a forkedFrom that is neither a thread id nor null; delete the file to remove this chat");
-  const effort = value["effort"];
-  if (effort !== "low" && effort !== "medium") throw invalid(source, `has effort ${JSON.stringify(effort)}; effort must be low or medium`);
+  const effort = CLAUDE_EFFORTS.find((candidate) => candidate === value["effort"]);
+  if (effort === undefined) throw invalid(source, `has effort ${JSON.stringify(value["effort"])}; effort must be ${CLAUDE_EFFORTS.join(", ")}`);
   const rawMessages = value["messages"];
   const rawTurns = value["turns"];
   if (!Array.isArray(rawMessages) || !Array.isArray(rawTurns)) throw invalid(source, "must hold lists of messages and turns; delete the file to remove this chat");

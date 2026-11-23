@@ -41,7 +41,7 @@ function completedEvents(events: ReadonlyArray<ProviderEvent>): Array<Extract<Pr
 /** Starts a thread, sends one turn and waits until it completed. */
 async function runTurn(context: Setup, threadId: ThreadId, question: string, screen: ScreenContext | null = null): Promise<TurnId> {
   const before = completedEvents(context.events).length;
-  const turnId = await context.provider.startTurn(threadId, { question, context: screen });
+  const turnId = await context.provider.startTurn(threadId, { question, context: screen, model: "claude-opus-5-5", reasoning: "low" });
   await until(() => completedEvents(context.events).length === before + 1);
   return turnId;
 }
@@ -151,7 +151,7 @@ test("interrupt_keeps_messages_alternating", async () => {
   const context = await setup();
   context.fake.script({ kind: "hang" });
   const threadId = await context.provider.startThread();
-  const turnId = await context.provider.startTurn(threadId, { question: "long question", context: null });
+  const turnId = await context.provider.startTurn(threadId, { question: "long question", context: null, model: "claude-opus-5-5", reasoning: "low" });
 
   await context.provider.interruptTurn(threadId, turnId);
   await until(() => completedEvents(context.events).length === 1);
@@ -169,7 +169,7 @@ test("an_interrupt_after_some_text_stores_only_the_text_already_shown", async ()
   const context = await setup();
   context.fake.script({ kind: "hang", chunksBefore: ["The step ", "size"] });
   const threadId = await context.provider.startThread();
-  const turnId = await context.provider.startTurn(threadId, { question: "what is lr?", context: null });
+  const turnId = await context.provider.startTurn(threadId, { question: "what is lr?", context: null, model: "claude-opus-5-5", reasoning: "low" });
   await until(() => context.events.filter((event) => event.type === "delta").length === 2);
 
   await context.provider.interruptTurn(threadId, turnId);
@@ -189,9 +189,9 @@ test("a_second_turn_while_one_runs_is_refused_and_sends_nothing", async () => {
   const context = await setup();
   context.fake.script({ kind: "hang" });
   const threadId = await context.provider.startThread();
-  await context.provider.startTurn(threadId, { question: "first", context: null });
+  await context.provider.startTurn(threadId, { question: "first", context: null, model: "claude-opus-5-5", reasoning: "low" });
 
-  await expect(context.provider.startTurn(threadId, { question: "second", context: null })).rejects.toThrow("a turn is already running in this chat; wait for the answer or stop it first");
+  await expect(context.provider.startTurn(threadId, { question: "second", context: null, model: "claude-opus-5-5", reasoning: "low" })).rejects.toThrow("a turn is already running in this chat; wait for the answer or stop it first");
 
   expect(context.fake.requests).toHaveLength(1);
 });
@@ -331,7 +331,7 @@ test("signed_out_start_turn_is_refused_before_any_request", async () => {
   const context = await setup(null);
   const threadId = await context.provider.startThread();
 
-  await expect(context.provider.startTurn(threadId, { question: "hello", context: null })).rejects.toThrow(NOT_SIGNED_IN);
+  await expect(context.provider.startTurn(threadId, { question: "hello", context: null, model: "claude-opus-5-5", reasoning: "low" })).rejects.toThrow(NOT_SIGNED_IN);
 
   expect(NOT_SIGNED_IN).toBe("Claude is not signed in; sign in from the Accounts page");
   expect(context.fake.requests).toEqual([]);
@@ -341,7 +341,7 @@ test("a_blank_question_is_refused_before_any_request", async () => {
   const context = await setup();
   const threadId = await context.provider.startThread();
 
-  await expect(context.provider.startTurn(threadId, { question: "  ", context: null })).rejects.toThrow("question must not be empty");
+  await expect(context.provider.startTurn(threadId, { question: "  ", context: null, model: "claude-opus-5-5", reasoning: "low" })).rejects.toThrow("question must not be empty");
 
   expect(context.fake.requests).toEqual([]);
 });
@@ -394,14 +394,58 @@ test("the_default_effort_is_the_provisional_low", () => {
   expect(CLAUDE_DEFAULT_EFFORT).toBe("low");
 });
 
-test("a_thread_keeps_the_model_and_effort_it_was_stored_with", async () => {
+test("claude_turn_carries_model_and_effort", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["A1"] });
+  const threadId = await context.provider.startThread();
+  const before = completedEvents(context.events).length;
+
+  await context.provider.startTurn(threadId, { question: "Q1", context: null, model: "claude-opus-5-5", reasoning: "xhigh" });
+  await until(() => completedEvents(context.events).length === before + 1);
+
+  expect(context.fake.requests[0]?.params).toMatchObject({ model: "claude-opus-5-5", output_config: { effort: "xhigh" } });
+});
+
+test("a_turns_choice_is_stored_with_the_chat_and_the_next_turn_uses_the_newer_one", async () => {
   const context = await setup();
   context.fake.script({ kind: "answer", chunks: ["A1"] }, { kind: "answer", chunks: ["A2"] });
   const threadId = await context.provider.startThread();
   await runTurn(context, threadId, "Q1");
-  await context.store.write({ ...(await context.store.read(threadId)), effort: "medium" });
+  expect((await context.store.read(threadId)).effort).toBe("low");
 
-  await runTurn(context, threadId, "Q2");
+  const before = completedEvents(context.events).length;
+  await context.provider.startTurn(threadId, { question: "Q2", context: null, model: "claude-opus-5-5", reasoning: "max" });
+  await until(() => completedEvents(context.events).length === before + 1);
 
-  expect(context.fake.requests[1]?.params["output_config"]).toEqual({ effort: "medium" });
+  expect(context.fake.requests[1]?.params["output_config"]).toEqual({ effort: "max" });
+  expect((await context.store.read(threadId)).effort).toBe("max");
+});
+
+test("unknown_reasoning_value_is_rejected_before_sending", async () => {
+  const context = await setup();
+  const threadId = await context.provider.startThread();
+
+  await expect(context.provider.startTurn(threadId, { question: "Q", context: null, model: "claude-opus-5-5", reasoning: "turbo" })).rejects.toThrow(
+    "reasoning level `turbo` is not offered by `claude-opus-5-5`; choose low, medium, high, xhigh or max",
+  );
+
+  expect(context.fake.requests).toEqual([]);
+  expect(await context.store.list()).toEqual([]);
+});
+
+test("an_unknown_model_is_rejected_before_sending", async () => {
+  const context = await setup();
+  const threadId = await context.provider.startThread();
+
+  await expect(context.provider.startTurn(threadId, { question: "Q", context: null, model: "claude-haiku-9", reasoning: "low" })).rejects.toThrow("model `claude-haiku-9` is not offered; choose claude-opus-5-5");
+
+  expect(context.fake.requests).toEqual([]);
+});
+
+test("list_models_offers_opus_with_all_five_levels_images_and_pdfs", async () => {
+  const context = await setup();
+
+  expect(await context.provider.listModels()).toEqual([
+    { provider: "claude", id: "claude-opus-5-5", label: "Claude Opus 5.5", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], defaultReasoning: CLAUDE_DEFAULT_EFFORT, acceptsImages: true, acceptsPdfs: true },
+  ]);
 });

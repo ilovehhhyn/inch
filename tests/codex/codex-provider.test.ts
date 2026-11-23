@@ -11,9 +11,26 @@ import { FakeAppServer } from "../fakes/fake-app-server";
 
 const EMPTY_WORKSPACE = "/Users/example/Library/Application Support/Margin/empty-workspace";
 const INIT_RESULT = { userAgent: "codex/0.146.0", codexHome: "/Users/example/.codex", platformFamily: "unix", platformOs: "macos" };
-const MODEL_LIST = { data: [{ id: "gpt-5.6-luna", isDefault: false }, { id: "gpt-5.6-sol", isDefault: true }], nextCursor: null };
+function modelEntry(id: string, isDefault: boolean, levels: Array<string>, modalities: Array<string>, hidden = false) {
+  return { id, displayName: id.toUpperCase(), hidden, isDefault, supportedReasoningEfforts: levels.map((reasoningEffort) => ({ reasoningEffort, description: "" })), defaultReasoningEffort: levels[0] ?? "", inputModalities: modalities };
+}
+const MODEL_LIST = {
+  data: [modelEntry("gpt-5.6-luna", false, ["low", "medium"], ["text"]), modelEntry("gpt-5.6-sol", true, ["medium", "high", "xhigh"], ["text", "image"]), modelEntry("gpt-5.6-secret", false, ["low"], ["text"], true)],
+  nextCursor: null,
+};
 const THREAD_ID = asThreadId("thread-1");
 const CONTEXT: ScreenContext = { paneKind: "diff", paneTitle: "repo", blocks: [{ label: "train.py line 39", text: "return peak * (step // warmup_steps)" }] };
+
+async function setupWithClient() {
+  const fake = new FakeAppServer();
+  fake.respond("initialize", INIT_RESULT);
+  fake.ignore("initialized");
+  fake.respond("config/read", { config: {} });
+  const connection = new RpcConnection({ input: fake.input, output: fake.output, requestTimeoutMs: 30_000 });
+  const client = new CodexClient({ connection, appVersion: "1.0.0", openExternal: async () => undefined, log: () => undefined, emptyWorkspacePath: EMPTY_WORKSPACE });
+  await client.initialize();
+  return { fake, client, provider: createCodexProvider(client) };
+}
 
 async function setup() {
   const fake = new FakeAppServer();
@@ -33,27 +50,82 @@ async function settle(): Promise<void> {
 
 test("codex_provider_forwards_start_turn_with_context_first", async () => {
   const { fake, provider, sent } = await setup();
+  fake.respond("model/list", MODEL_LIST);
   fake.respond("turn/start", { turn: { id: "turn-1" } });
 
-  const turnId = await provider.startTurn(THREAD_ID, { question: "does this look right?", context: CONTEXT });
+  const turnId = await provider.startTurn(THREAD_ID, { question: "does this look right?", context: CONTEXT, model: "gpt-5.6-sol", reasoning: "high" });
 
   expect(turnId).toBe("turn-1");
-  expect(sent()[0]?.params).toEqual({
+  expect(sent()[1]?.params).toEqual({
     threadId: "thread-1",
     input: [
       { type: "text", text: renderContextBlock(CONTEXT) + "\n\n", text_elements: [] },
       { type: "text", text: "does this look right?", text_elements: [] },
     ],
+    model: "gpt-5.6-sol",
+    effort: "high",
   });
 });
 
 test("a_turn_without_context_sends_only_the_question_through_the_provider", async () => {
   const { fake, provider, sent } = await setup();
+  fake.respond("model/list", MODEL_LIST);
   fake.respond("turn/start", { turn: { id: "turn-1" } });
 
-  await provider.startTurn(THREAD_ID, { question: "hello", context: null });
+  await provider.startTurn(THREAD_ID, { question: "hello", context: null, model: "gpt-5.6-sol", reasoning: "medium" });
 
-  expect(sent()[0]?.params).toEqual({ threadId: "thread-1", input: [{ type: "text", text: "hello", text_elements: [] }] });
+  expect(sent()[1]?.params).toEqual({ threadId: "thread-1", input: [{ type: "text", text: "hello", text_elements: [] }], model: "gpt-5.6-sol", effort: "medium" });
+});
+
+test("codex_turn_carries_model_and_effort", async () => {
+  const { fake, provider, sent } = await setup();
+  fake.respond("model/list", MODEL_LIST);
+  fake.respond("turn/start", { turn: { id: "turn-1" } });
+
+  await provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "low" });
+
+  expect(sent().map((message) => message.method)).toEqual(["model/list", "turn/start"]);
+  expect(sent()[1]?.params).toMatchObject({ model: "gpt-5.6-luna", effort: "low" });
+});
+
+test("unknown_reasoning_value_is_rejected_before_sending", async () => {
+  const { fake, provider, sent } = await setup();
+  fake.respond("model/list", MODEL_LIST);
+
+  await expect(provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "turbo" })).rejects.toThrow(
+    "reasoning level `turbo` is not offered by `gpt-5.6-luna`; choose low or medium",
+  );
+
+  expect(sent().map((message) => message.method)).toEqual(["model/list"]);
+});
+
+test("list_models_maps_levels_and_modalities_puts_the_default_first_and_hides_hidden_models", async () => {
+  const { fake, provider } = await setup();
+  fake.respond("model/list", MODEL_LIST);
+
+  const models = await provider.listModels();
+
+  expect(models).toEqual([
+    { provider: "codex", id: "gpt-5.6-sol", label: "GPT-5.6-SOL", reasoningLevels: ["medium", "high", "xhigh"], defaultReasoning: "medium", acceptsImages: true, acceptsPdfs: false },
+    { provider: "codex", id: "gpt-5.6-luna", label: "GPT-5.6-LUNA", reasoningLevels: ["low", "medium"], defaultReasoning: "low", acceptsImages: false, acceptsPdfs: false },
+  ]);
+});
+
+test("a_default_level_missing_from_the_supported_levels_is_an_error_naming_the_model", async () => {
+  const { fake, provider } = await setup();
+  fake.respond("model/list", { data: [{ ...modelEntry("gpt-x", true, ["low"], ["text"]), defaultReasoningEffort: "high" }], nextCursor: null });
+
+  await expect(provider.listModels()).rejects.toThrow("model `gpt-x` has default reasoning level `high` that is not in its supported levels");
+});
+
+test("a_turn_changes_the_model_a_restarted_server_resumes_the_thread_with", async () => {
+  const { fake, client, provider } = await setupWithClient();
+  fake.respond("model/list", MODEL_LIST);
+  fake.respond("turn/start", { turn: { id: "turn-1" } });
+
+  await provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "low" });
+
+  expect(client.modelOf(THREAD_ID)).toBe("gpt-5.6-luna");
 });
 
 test("codex_provider_emits_provider_events_only", async () => {

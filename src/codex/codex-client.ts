@@ -14,6 +14,8 @@ import type { InitializeResponse } from "./generated/InitializeResponse";
 import { buildMcpDisableConfig } from "./mcp-overrides";
 import type { Thread } from "./generated/v2/Thread";
 import type { ThreadListResponse } from "./generated/v2/ThreadListResponse";
+import type { Model } from "./generated/v2/Model";
+import type { ModelOption } from "../shared/models";
 import type { RpcConnection } from "./rpc-connection";
 import type { JsonValue, Unsubscribe } from "./rpc-types";
 
@@ -109,6 +111,15 @@ export function toProviderEvent(notification: ServerNotification): ProviderEvent
   return null;
 }
 
+/** Maps one `model/list` entry; a default level the model does not list is a protocol change, so it is an error. */
+export function toModelOption(model: Model): ModelOption {
+  const levels = model.supportedReasoningEfforts.map((option) => option.reasoningEffort);
+  if (!levels.includes(model.defaultReasoningEffort)) {
+    throw new Error(`model \`${model.id}\` has default reasoning level \`${model.defaultReasoningEffort}\` that is not in its supported levels; update Margin or Codex so their versions match`);
+  }
+  return { provider: "codex", id: model.id, label: model.displayName, reasoningLevels: levels, defaultReasoning: model.defaultReasoningEffort, acceptsImages: model.inputModalities.includes("image"), acceptsPdfs: false };
+}
+
 function requireText(value: string, name: string): void {
   if (value.trim() === "") throw new Error(`${name} must not be empty`);
 }
@@ -179,6 +190,15 @@ export class CodexClient {
     const found = data.find((model) => model.isDefault);
     if (found === undefined) throw new Error("model/list marks no default model; choose a model explicitly or sign in to an account that has one");
     return found.id;
+  }
+
+  /** The models the account can use, the default first; hidden models are left out. */
+  async listModels(): Promise<Array<ModelOption>> {
+    const { data } = await this.connection.request("model/list", {});
+    return data
+      .filter((model) => !model.hidden)
+      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault))
+      .map(toModelOption);
   }
 
   readAccount(): Promise<GetAccountResponse> {
@@ -315,11 +335,17 @@ export class CodexClient {
     return thread;
   }
 
-  /** Sends the context and the question as two text items; the context item ends with a blank line so they do not run together. */
-  async startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: RenderedContext | null }>): Promise<TurnId> {
+  /**
+   * Sends the context and the question as two text items; the context item ends with a blank line so they do not run together.
+   * `model` and `effort` apply to this turn and the turns after it, and a restarted app-server resumes the thread with `model`.
+   */
+  async startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: RenderedContext | null; model: string; effort: string }>): Promise<TurnId> {
     requireText(input.question, "question");
+    requireText(input.model, "model");
+    requireText(input.effort, "effort");
     const items = [...(input.context === null ? [] : [input.context.text + CONTEXT_SEPARATOR]), input.question];
-    const { turn } = await this.connection.request("turn/start", { threadId, input: items.map((text) => ({ type: "text" as const, text, text_elements: [] })) });
+    const { turn } = await this.connection.request("turn/start", { threadId, input: items.map((text) => ({ type: "text" as const, text, text_elements: [] })), model: input.model, effort: input.effort });
+    this.models.set(threadId, input.model);
     const turnId = asTurnId(turn.id);
     this.turns.set(turnId, threadId);
     this.resumable.add(threadId);

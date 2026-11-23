@@ -87,9 +87,18 @@ test("text_that_is_not_json_is_rejected_with_the_file_name", async () => {
   await expect(createClaudeThreadStore(directory).read(THREAD)).rejects.toThrow(`${path} is not valid JSON`);
 });
 
+test.each(["low", "medium", "high", "xhigh", "max"] as const)("a chat stored with effort %s is read back with it", async (effort) => {
+  const directory = await folder();
+  const store = createClaudeThreadStore(directory);
+
+  await store.write({ ...SAVED, effort });
+
+  expect((await store.read(THREAD)).effort).toBe(effort);
+});
+
 test.each([
   ["a thread id that differs from the file name", { ...SAVED, threadId: "someone-else" }, "threadId"],
-  ["an effort outside low and medium", { ...SAVED, effort: "max" }, "effort"],
+  ["an effort that Claude does not offer", { ...SAVED, effort: "turbo" }, "effort must be low, medium, high, xhigh, max"],
   ["an empty model", { ...SAVED, model: "" }, "model"],
   ["a message with another role", { ...SAVED, messages: [{ role: "system", content: "x" }, SAVED.messages[1]] }, "role"],
   ["two user messages in a row", { ...SAVED, messages: [SAVED.messages[0], SAVED.messages[0]] }, "alternate"],

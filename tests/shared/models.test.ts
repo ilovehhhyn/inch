@@ -1,7 +1,7 @@
 // Invariant: a model choice is accepted only when the model is offered and the reasoning level is one of that model's levels, and a model change keeps the level when the new model has it.
 import { expect, test } from "vitest";
 
-import { choiceAfterModelChange, defaultChoice, requireModelChoice, type ModelOption } from "../../src/shared/models";
+import { choiceAfterModelChange, defaultChoice, firstChoice, requireModelChoice, type ModelOption } from "../../src/shared/models";
 
 const OPUS: ModelOption = { provider: "claude", id: "claude-opus-5-5", label: "Claude Opus 5.5", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], defaultReasoning: "low", acceptsImages: true, acceptsPdfs: true };
 const SMALL: ModelOption = { provider: "codex", id: "small", label: "Small", reasoningLevels: ["medium", "high"], defaultReasoning: "medium", acceptsImages: false, acceptsPdfs: false };
@@ -39,4 +39,13 @@ test("changing_to_a_model_with_the_level_keeps_it_and_says_nothing", () => {
 
 test("the_default_choice_is_the_first_model_with_its_default_level", () => {
   expect(defaultChoice([OPUS, SMALL])).toEqual({ model: "claude-opus-5-5", reasoning: "low" });
+});
+
+test("the_first_stored_choice_wins_even_when_the_model_is_no_longer_offered", () => {
+  expect(firstChoice([OPUS], [null, { model: "retired", reasoning: "turbo" }, { model: "claude-opus-5-5", reasoning: "max" }])).toEqual({ model: "retired", reasoning: "turbo" });
+});
+
+test("with_no_stored_choice_the_default_is_used_and_an_empty_list_gives_null", () => {
+  expect(firstChoice([OPUS], [null])).toEqual({ model: "claude-opus-5-5", reasoning: "low" });
+  expect(firstChoice([], [null])).toBeNull();
 });

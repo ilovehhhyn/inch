@@ -65,11 +65,15 @@ export async function startFakeAnthropicServer(): Promise<FakeAnthropicServer> {
     void (async () => {
       const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
       const authorization = request.headers.authorization ?? null;
-      if (request.method === "GET" && path === "/v1/models") {
+      if (request.method === "GET" && (path === "/v1/models" || path.startsWith("/v1/models/"))) {
         modelRequests.push({ authorization });
         if (shouldRejectNextKey) {
           shouldRejectNextKey = false;
           return sendJson(response, 401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } });
+        }
+        if (path !== "/v1/models") {
+          const id = path.slice("/v1/models/".length);
+          return sendJson(response, 200, { id, type: "model", display_name: id, created_at: "2026-01-01T00:00:00Z" });
         }
         return sendJson(response, 200, { data: [], has_more: false, first_id: null, last_id: null });
       }

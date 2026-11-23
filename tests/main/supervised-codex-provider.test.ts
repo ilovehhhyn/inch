@@ -22,6 +22,7 @@ async function startedClient(): Promise<Readonly<{ fake: FakeAppServer; client: 
 
 test("a_call_waits_for_the_client_that_a_restart_produces_and_uses_it", async () => {
   const { fake, client } = await startedClient();
+  fake.respond("model/list", { data: [{ id: "gpt-5.6-sol", displayName: "Sol", hidden: false, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: "high", description: "" }], defaultReasoningEffort: "high", inputModalities: ["text"] }], nextCursor: null });
   fake.respond("turn/start", { turn: { id: "turn-1" } });
   let release: (client: CodexClient) => void = () => undefined;
   const restarting = new Promise<CodexClient>((resolve) => {
@@ -29,7 +30,7 @@ test("a_call_waits_for_the_client_that_a_restart_produces_and_uses_it", async ()
   });
   const { provider } = createSupervisedCodexProvider(() => restarting);
 
-  const pending = provider.startTurn(asThreadId("thread-1"), { question: "hello", context: null });
+  const pending = provider.startTurn(asThreadId("thread-1"), { question: "hello", context: null, model: "gpt-5.6-sol", reasoning: "high" });
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(fake.received().filter((message) => message.method === "turn/start")).toEqual([]);
   release(client);

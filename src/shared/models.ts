@@ -51,3 +51,10 @@ export function defaultChoice(models: ReadonlyArray<ModelOption>): ModelChoice {
   if (first === undefined) throw new Error("no models are available; sign in again or restart Margin");
   return { model: first.id, reasoning: first.defaultReasoning };
 }
+
+/** The first stored candidate, else the default of `models`; null while `models` is empty. A candidate the provider no longer offers is kept so the window shows it as unavailable. */
+export function firstChoice(models: ReadonlyArray<ModelOption>, candidates: ReadonlyArray<ModelChoice | null>): ModelChoice | null {
+  const stored = candidates.find((candidate) => candidate !== null);
+  if (stored !== undefined) return stored;
+  return models.length === 0 ? null : defaultChoice(models);
+}

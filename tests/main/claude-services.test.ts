@@ -2,7 +2,7 @@
 import { expect, test } from "vitest";
 
 import { AntCliError, type AntCli } from "../../src/claude/ant-cli";
-import { ANT_TOKEN_REFRESH_MS, type SecretStore } from "../../src/claude/claude-credentials";
+import { ANT_TOKEN_REFRESH_MS, type ClaudeCredential, type SecretStore } from "../../src/claude/claude-credentials";
 import { createClaudeServices } from "../../src/main/claude-services";
 import type { ProviderId } from "../../src/shared/provider-id";
 
@@ -32,12 +32,12 @@ function fakeAnt(): AntCli & { calls: Array<string>; token: string | null } {
   return ant;
 }
 
-function services(overrides: Readonly<{ validate?: (key: string) => Promise<void> }> = {}) {
+function services(overrides: Readonly<{ validate?: (key: string) => Promise<void>; checkModels?: (credential: ClaudeCredential) => Promise<void> }> = {}) {
   const store = memoryStore();
   const ant = fakeAnt();
   const clock = { now: 0 };
   const logs: Array<string> = [];
-  const result = createClaudeServices({ store, ant: async () => ant, clock: () => clock.now, clientOptions: {}, log: (line) => logs.push(line), ...overrides });
+  const result = createClaudeServices({ store, ant: async () => ant, clock: () => clock.now, clientOptions: {}, log: (line) => logs.push(line), checkModels: async () => undefined, ...overrides });
   return { store, ant, clock, logs, ...result };
 }
 
@@ -83,6 +83,25 @@ test("console_sign_in_reads_a_fresh_token_afterwards", async () => {
   await signInConsole();
 
   expect(await credentials()).toMatchObject({ kind: "antProfile", accessToken: "token-2" });
+});
+
+test("console_sign_in_checks_the_offered_models_with_the_new_token", async () => {
+  const checked: Array<ClaudeCredential> = [];
+  const { signInConsole } = services({ checkModels: async (credential) => void checked.push(credential) });
+
+  await signInConsole();
+
+  expect(checked).toEqual([{ kind: "antProfile", profile: "margin", accessToken: "token-1", fetchedAtMs: 0 }]);
+});
+
+test("console_sign_in_fails_when_the_account_cannot_use_an_offered_model", async () => {
+  const { signInConsole } = services({
+    checkModels: async () => {
+      throw new Error("Claude model `claude-opus-5-5` is not available to this account; sign in with an account that can use it, or remove it from CLAUDE_MODELS");
+    },
+  });
+
+  await expect(signInConsole()).rejects.toThrow("not available to this account");
 });
 
 test("a_rejected_key_is_not_stored_and_the_credential_stays_signed_out", async () => {

@@ -21,6 +21,7 @@ export function createSupervisedCodexProvider(ready: () => Promise<CodexClient>)
   const provider: ChatProvider = {
     id: "codex",
     readAccount: async () => (await current()).readAccount(),
+    listModels: async () => (await current()).listModels(),
     startThread: async () => (await current()).startThread(),
     forkThread: async (threadId, lastTurnId) => (await current()).forkThread(threadId, lastTurnId),
     startTurn: async (threadId, input) => (await current()).startTurn(threadId, input),

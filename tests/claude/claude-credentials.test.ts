@@ -5,6 +5,7 @@ import { expect, onTestFinished, test } from "vitest";
 import { AntCliError, ANT_INSTALL_MESSAGE, type AntCli } from "../../src/claude/ant-cli";
 import {
   ANT_TOKEN_NEEDS_OAUTH_BETA,
+  checkApiKey,
   ANT_TOKEN_REFRESH_MS,
   OAUTH_BETA,
   betasFor,
@@ -288,4 +289,38 @@ test("sign_out_without_ant_still_deletes_the_key", async () => {
   await signOut(store, ant);
 
   expect(store.keys.size).toBe(0);
+});
+
+function modelFetch(unavailable: ReadonlyArray<string>): Readonly<{ fetch: typeof fetch; paths: Array<string> }> {
+  const paths: Array<string> = [];
+  const answer = async (input: RequestInfo | URL): Promise<Response> => {
+    const path = new URL(String(input)).pathname;
+    paths.push(path);
+    const id = path.split("/").at(-1) ?? "";
+    if (unavailable.includes(id)) return new Response(JSON.stringify({ type: "error", error: { type: "not_found_error", message: `model: ${id}` } }), { status: 404, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ id, type: "model", display_name: id, created_at: "2026-01-01T00:00:00Z" }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  return { fetch: answer, paths };
+}
+
+test("sign_in_retrieves_each_offered_model_once", async () => {
+  const { fetch: fakeFetch, paths } = modelFetch([]);
+
+  await checkApiKey(KEY, { fetch: fakeFetch }, ["claude-opus-5-5", "claude-sonnet-5-5"]);
+
+  expect(paths).toEqual(["/v1/models/claude-opus-5-5", "/v1/models/claude-sonnet-5-5"]);
+});
+
+test("a_model_the_account_cannot_use_fails_sign_in_naming_the_model_and_the_fix", async () => {
+  const { fetch: fakeFetch } = modelFetch(["claude-opus-5-5"]);
+
+  await expect(checkApiKey(KEY, { fetch: fakeFetch }, ["claude-opus-5-5"])).rejects.toThrow(
+    "Claude model `claude-opus-5-5` is not available to this account; sign in with an account that can use it, or remove it from CLAUDE_MODELS",
+  );
+});
+
+test("a_rejected_key_is_still_reported_as_an_authentication_error_by_the_model_check", async () => {
+  const rejecting = async (): Promise<Response> => new Response(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }), { status: 401, headers: { "content-type": "application/json" } });
+
+  await expect(checkApiKey(KEY, { fetch: rejecting }, ["claude-opus-5-5"])).rejects.toBeInstanceOf(Anthropic.AuthenticationError);
 });

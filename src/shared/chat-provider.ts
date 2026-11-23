@@ -1,5 +1,6 @@
 // Defines the one interface both model providers implement, so the window and the IPC layer never name a provider's protocol.
 import type { ScreenContext } from "./context-format";
+import type { ModelOption } from "./models";
 import type { ProviderId } from "./provider-id";
 import type { ProviderEvent, ThreadId, TurnId } from "./provider-events";
 import type { DisplayMessage, ThreadSummary } from "./thread-history";
@@ -9,11 +10,14 @@ export type Unsubscribe = () => void;
 /** The signed-in state of one provider; `label` is a plan or method such as "ChatGPT Plus", "Claude Console" or "API key", never a key, a token or an email. */
 export type ProviderAccount = Readonly<{ provider: ProviderId; signedIn: boolean; label: string | null }>;
 
-export type TurnInput = Readonly<{ question: string; context: ScreenContext | null }>;
+/** `model` and `reasoning` must be one of `listModels()`; the provider rejects any other value before it sends anything. */
+export type TurnInput = Readonly<{ question: string; context: ScreenContext | null; model: string; reasoning: string }>;
 
 export interface ChatProvider {
   readonly id: ProviderId;
   readAccount(): Promise<ProviderAccount>;
+  /** The models this account can use, the provider's default first. */
+  listModels(): Promise<ReadonlyArray<ModelOption>>;
   /** Starts a chat on the provider's default model. */
   startThread(): Promise<ThreadId>;
   /** Forks `threadId` through `lastTurnId` into a new thread; side chats use it. */
