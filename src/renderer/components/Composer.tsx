@@ -1,10 +1,24 @@
 // Holds the text the user is typing and turns Enter, Command-I and Escape into send and interrupt requests; the draft lives in the parent.
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 
+import { choiceAfterModelChange, type ModelChoice, type ModelOption } from "../../shared/models";
+import type { ProviderId } from "../../shared/provider-id";
+import { ModelPicker } from "./ModelPicker";
+import { ProviderPicker } from "./ProviderPicker";
+import { ReasoningPicker } from "./ReasoningPicker";
+
 export type SendMode = "plain" | "withContext";
 
 export const BUSY_HINT = "Wait for the answer, or press Esc to stop it";
 export const EMPTY_HINT = "Type a question first";
+
+/** The pickers under the composer; `provider` is present only for a new chat that can use more than one provider. */
+export type ComposerPickers = Readonly<{
+  models: ReadonlyArray<ModelOption>;
+  choice: ModelChoice;
+  onChoiceChange: (choice: ModelChoice) => void;
+  provider?: Readonly<{ providers: ReadonlyArray<ProviderId>; selected: ProviderId; onChange: (provider: ProviderId) => void }>;
+}>;
 
 export type ComposerProps = Readonly<{
   draft: string;
@@ -17,6 +31,7 @@ export type ComposerProps = Readonly<{
   placeholder?: string;
   /** The accessible name of the text box; the main composer and each side chat composer need different ones. */
   label?: string;
+  pickers?: ComposerPickers;
 }>;
 
 function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null {
@@ -28,7 +43,7 @@ function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null 
   return null;
 }
 
-export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message" }: ComposerProps): ReactElement {
+export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message", pickers }: ComposerProps): ReactElement {
   const [hint, setHint] = useState<string | null>(null);
 
   const latestDraft = useRef(draft);
@@ -40,6 +55,15 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
   function clearSent(sentDraft: string): void {
     const current = latestDraft.current;
     if (current.startsWith(sentDraft)) onDraftChange(current.slice(sentDraft.length));
+  }
+
+  function changeModel(modelId: string): void {
+    if (pickers === undefined) return;
+    const option = pickers.models.find((model) => model.id === modelId);
+    if (option === undefined) throw new Error(`model ${modelId} is not in the list the picker shows`);
+    const change = choiceAfterModelChange(option, pickers.choice.reasoning);
+    setHint(change.note);
+    pickers.onChoiceChange(change.choice);
   }
 
   function trySend(mode: SendMode): void {
@@ -86,6 +110,20 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
         <p className="composer-hint" role="status">
           {hint}
         </p>
+      )}
+      {pickers === undefined ? null : (
+        <div className="composer-tools">
+          {pickers.provider === undefined ? null : <ProviderPicker {...pickers.provider} />}
+          <ModelPicker models={pickers.models} value={pickers.choice.model} onChange={changeModel} />
+          <ReasoningPicker
+            levels={pickers.models.find((model) => model.id === pickers.choice.model)?.reasoningLevels ?? []}
+            value={pickers.choice.reasoning}
+            onChange={(reasoning) => {
+              setHint(null);
+              pickers.onChoiceChange({ model: pickers.choice.model, reasoning });
+            }}
+          />
+        </div>
       )}
     </div>
   );

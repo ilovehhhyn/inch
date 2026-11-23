@@ -19,7 +19,7 @@ test("with_both_providers_signed_in_a_new_chat_starts_on_the_chosen_one", async 
   api.claudeAccount = CLAUDE_SIGNED_IN;
   render(<App api={api} />);
 
-  await userEvent.selectOptions(await screen.findByLabelText("New chats use"), "claude");
+  await userEvent.selectOptions(await screen.findByLabelText("Provider"), "claude");
   await send("hello");
 
   await waitFor(() => expect(api.providerCalls).toEqual(["threadStart:claude", "turnStart:claude"]));
@@ -43,22 +43,25 @@ test("with_only_claude_signed_in_there_is_no_choice_and_a_new_chat_uses_claude",
 
   await send("hello");
 
-  expect(screen.queryByLabelText("New chats use")).toBeNull();
+  expect(screen.queryByLabelText("Provider")).toBeNull();
   await waitFor(() => expect(api.providerCalls).toEqual(["threadStart:claude", "turnStart:claude"]));
 });
 
-test("a_chat_keeps_its_provider_when_the_choice_for_new_chats_changes", async () => {
+test("a_chat_keeps_its_provider_for_every_later_message_and_the_choice_returns_for_the_next_new_chat", async () => {
   const api = new FakeMarginApi();
   api.claudeAccount = CLAUDE_SIGNED_IN;
   render(<App api={api} />);
+  await userEvent.selectOptions(await screen.findByLabelText("Provider"), "claude");
   await send("first");
   await waitFor(() => expect(api.turnStarts).toHaveLength(1));
   act(() => api.emitProvider({ type: "completed", threadId: asThreadId("thread-1"), turnId: asTurnId("turn-1"), status: "completed", error: null }));
 
-  await userEvent.selectOptions(screen.getByLabelText("New chats use"), "claude");
   await send("second");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(2));
+  await userEvent.click(screen.getByRole("button", { name: "+ New chat" }));
 
-  await waitFor(() => expect(api.providerCalls).toEqual(["threadStart:codex", "turnStart:codex", "turnStart:codex"]));
+  expect(api.providerCalls).toEqual(["threadStart:claude", "turnStart:claude", "turnStart:claude"]);
+  expect(screen.getByLabelText("Provider")).toHaveValue("claude");
 });
 
 test("an_account_change_event_from_a_provider_reads_the_accounts_again", async () => {

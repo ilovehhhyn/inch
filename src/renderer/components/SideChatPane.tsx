@@ -6,7 +6,7 @@ import type { PaneId } from "../context/pane-id";
 import type { ScrollTracker } from "../context/scroll-tracker";
 import type { ThreadStore } from "../state/thread-store";
 import { ChatPane } from "./ChatPane";
-import { Composer, type SendMode } from "./Composer";
+import { Composer, type ComposerPickers, type SendMode } from "./Composer";
 
 export type SideChatPaneProps = Readonly<{
   paneId: PaneId;
@@ -19,9 +19,10 @@ export type SideChatPaneProps = Readonly<{
   onInterrupt: (threadId: ThreadId, turnId: TurnId) => void;
   onRetry: (threadId: ThreadId) => void;
   onClose: (threadId: ThreadId) => void;
+  pickers?: ComposerPickers;
 }>;
 
-export function SideChatPane({ paneId, threadId, title, store, tracker, isSending, onSend, onInterrupt, onRetry, onClose }: SideChatPaneProps): ReactElement {
+export function SideChatPane({ paneId, threadId, title, store, tracker, isSending, onSend, onInterrupt, onRetry, onClose, pickers }: SideChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => store.view(threadId));
   const [draft, setDraft] = useState("");
   return (
@@ -39,6 +40,7 @@ export function SideChatPane({ paneId, threadId, title, store, tracker, isSendin
           if (view.activeTurn !== null) onInterrupt(threadId, view.activeTurn);
         }}
         busy={isSending || view.activeTurn !== null}
+        {...(pickers === undefined ? {} : { pickers })}
       />
     </ChatPane>
   );

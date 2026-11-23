@@ -8,7 +8,7 @@ import { App } from "../../src/renderer/app";
 import { DEFAULT_LAYOUT } from "../../src/shared/layout";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 import type { DisplayMessage } from "../../src/shared/thread-history";
-import { FakeMarginApi } from "../fakes/fake-margin-api";
+import { CODEX_DEFAULT_CHOICE, FakeMarginApi } from "../fakes/fake-margin-api";
 import { installFakeLayout, userScroll } from "../fakes/fake-layout";
 
 const OLD = asThreadId("old-1");
@@ -73,7 +73,7 @@ test("side_chat_answers_stay_in_the_side_chat", async () => {
   await openSideChatOn(1);
 
   await userEvent.type(within(await sidePane()).getByLabelText("Side chat message"), "what about wd?{Enter}");
-  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: SIDE, question: "what about wd?", contextText: null }]));
+  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: SIDE, question: "what about wd?", contextText: null, choice: CODEX_DEFAULT_CHOICE }]));
   act(() => api.emitProvider({ type: "delta", threadId: SIDE, turnId: asTurnId("turn-1"), text: "Weight decay is separate." }));
 
   expect(await within(await sidePane()).findByText("Weight decay is separate.")).toBeInTheDocument();

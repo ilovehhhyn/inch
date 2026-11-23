@@ -3,11 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 
 import type { MarginApi } from "../shared/ipc-contract";
 import type { Layout } from "../shared/layout";
+import { firstChoice, type ModelChoice, type ModelOption } from "../shared/models";
 import type { ThreadId, TurnId } from "../shared/provider-events";
-import type { ProviderId } from "../shared/provider-id";
+import { PROVIDER_IDS, PROVIDER_NAMES, type ProviderId } from "../shared/provider-id";
 import { messagesAfterTurn, type ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
-import { Composer, type SendMode } from "./components/Composer";
+import { Composer, type ComposerPickers, type SendMode } from "./components/Composer";
 import { DiffPane } from "./components/DiffPane";
 import { Sidebar } from "./components/Sidebar";
 import { SideChatPane } from "./components/SideChatPane";
@@ -39,6 +40,10 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function pickerProps(pickers: ComposerPickers | undefined): { pickers?: ComposerPickers } {
+  return pickers === undefined ? {} : { pickers };
+}
+
 export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
@@ -48,6 +53,13 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [chosenProvider, setChosenProvider] = useState<ProviderId | null>(null);
+  const [models, setModels] = useState<ReadonlyMap<ProviderId, ReadonlyArray<ModelOption>>>(new Map());
+  /** The last choice of every chat the window knows, read from the chat's saved choice or set by the pickers. */
+  const [choices, setChoices] = useState<ReadonlyMap<ThreadId, ModelChoice>>(new Map());
+  /** The choice for the next new chat; null means the default of the new-chat provider. */
+  /** Chats started in this window, with their provider, until the chat list reports them. */
+  const [startedChats, setStartedChats] = useState<ReadonlyMap<ThreadId, ProviderId>>(new Map());
+  const [newChatChoice, setNewChatChoice] = useState<ModelChoice | null>(null);
   const openingSideChats = useRef(new Set<ThreadId>());
   /** The provider of every chat the window knows: chats belong to one provider for good, and side chats use their parent's. */
   const threadProviders = useRef(new Map<ThreadId, ProviderId>());
@@ -68,6 +80,20 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   if (firstProvider === undefined) throw new Error("no provider is signed in; the window shows the sign-in page then");
   /** A chosen provider that has since signed out gives way to the first one that is still signed in. */
   const newChatProvider = chosenProvider !== null && providers.includes(chosenProvider) ? chosenProvider : firstProvider;
+
+  const rememberChoice = useCallback((threadId: ThreadId, choice: ModelChoice): void => {
+    setChoices((previous) => new Map(previous).set(threadId, choice));
+  }, []);
+
+  const providerKey = providers.join(",");
+  useEffect(() => {
+    for (const provider of providerKey.split(",").filter((id): id is ProviderId => PROVIDER_IDS.some((known) => known === id))) {
+      api.modelsList(provider).then(
+        (listed) => setModels((previous) => new Map(previous).set(provider, listed)),
+        (error: unknown) => setProblem(`Could not list ${PROVIDER_NAMES[provider]} models: ${messageOf(error)}`),
+      );
+    }
+  }, [api, providerKey]);
 
   const applyLayout = useCallback((next: Layout): void => {
     latestLayout.current = next;
@@ -109,13 +135,17 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
       if (store.isLoaded(chat.threadId) || openingSideChats.current.has(chat.threadId)) continue;
       openingSideChats.current.add(chat.threadId);
       threadProviders.current.set(chat.threadId, chat.provider);
+      api.choiceRead(chat.threadId).then(
+        (stored) => (stored === null ? undefined : rememberChoice(chat.threadId, stored)),
+        (error: unknown) => store.reportError(chat.threadId, `Could not read the saved model choice: ${messageOf(error)}`),
+      );
       api
         .threadOpen(chat.provider, chat.threadId)
         .then((history) => store.load(chat.threadId, messagesAfterTurn(history, chat.forkedFromTurn)))
         .catch((error: unknown) => store.reportError(chat.threadId, messageOf(error)))
         .finally(() => openingSideChats.current.delete(chat.threadId));
     }
-  }, [api, store, visibleSideChats]);
+  }, [api, store, visibleSideChats, rememberChoice]);
 
   /** Applies `change` to the newest layout after every earlier save has finished, then writes it; the returned promise carries this save's own failure. */
   function saveLayout(change: (current: Layout) => Layout): Promise<void> {
@@ -156,9 +186,17 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
     saveLayout((current) => ({ ...current, sideChats: current.sideChats.filter((chat) => chat.threadId !== threadId) })).catch((error: unknown) => report(mainThread, error));
   }
 
+  function readStoredChoice(threadId: ThreadId): void {
+    api.choiceRead(threadId).then(
+      (stored) => (stored === null ? undefined : rememberChoice(threadId, stored)),
+      (error: unknown) => report(threadId, new Error(`Could not read the saved model choice: ${messageOf(error)}`)),
+    );
+  }
+
   function select(threadId: ThreadId): void {
     setMainThread(threadId);
     setProblem(null);
+    readStoredChoice(threadId);
     if (store.isLoaded(threadId)) return;
     api.threadOpen(providerOfThread(threadId), threadId).then(
       (history) => store.load(threadId, history),
@@ -179,10 +217,55 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
       report(threadId, error);
       return false;
     }
-    return sender.send(provider, threadId, question, mode, (started) => {
+    let choice = choiceOf(threadId);
+    if (choice === null) {
+      try {
+        choice = choiceOf(threadId, await api.modelsList(provider)); // the list is still loading: wait for it instead of sending without a model
+      } catch (error) {
+        report(threadId, new Error(`Could not list ${PROVIDER_NAMES[provider]} models: ${messageOf(error)}`));
+        return false;
+      }
+    }
+    if (choice === null) {
+      report(threadId, new Error(`${PROVIDER_NAMES[provider]} offers no models; sign in again, or restart Margin if this stays`));
+      return false;
+    }
+    const chosen = choice;
+    return sender.send(provider, threadId, question, mode, chosen, (started) => {
       threadProviders.current.set(started, provider);
+      setStartedChats((previous) => new Map(previous).set(started, provider));
+      rememberChoice(started, chosen);
       setMainThread(started);
     });
+  }
+
+  /** The provider of a chat on screen, read from state only (not the ref map, which render must not read); null when the chat is not known yet. */
+  function providerOfShown(threadId: ThreadId | null): ProviderId | null {
+    if (threadId === null) return newChatProvider;
+    return visibleSideChats.find((chat) => chat.threadId === threadId)?.provider ?? threads.find((thread) => thread.id === threadId)?.provider ?? startedChats.get(threadId) ?? null;
+  }
+
+  function modelsOfShown(threadId: ThreadId | null): ReadonlyArray<ModelOption> {
+    const provider = providerOfShown(threadId);
+    return provider === null ? [] : (models.get(provider) ?? []);
+  }
+
+  /** The chat's own choice, else (for a side chat) the main chat's, else the provider's default; null while the model list is loading. */
+  function choiceOf(threadId: ThreadId | null, list: ReadonlyArray<ModelOption> = modelsOfShown(threadId)): ModelChoice | null {
+    if (threadId === null) return firstChoice(list, [newChatChoice]);
+    const isSideChat = visibleSideChats.some((chat) => chat.threadId === threadId);
+    const mainChoice = mainThread === null ? newChatChoice : (choices.get(mainThread) ?? null);
+    return firstChoice(list, [choices.get(threadId) ?? null, isSideChat ? mainChoice : null]);
+  }
+
+  function pickersFor(threadId: ThreadId | null): ComposerPickers | undefined {
+    const provider = providerOfShown(threadId);
+    const list = provider === null ? undefined : models.get(provider);
+    const choice = choiceOf(threadId);
+    if (list === undefined || choice === null) return undefined;
+    const onChoiceChange = (next: ModelChoice): void => (threadId === null ? setNewChatChoice(next) : rememberChoice(threadId, next));
+    const providerChoice = threadId === null && providers.length > 1 ? { providers, selected: newChatProvider, onChange: (next: ProviderId) => { setChosenProvider(next); setNewChatChoice(null); } } : undefined;
+    return { models: list, choice, onChoiceChange, ...(providerChoice === undefined ? {} : { provider: providerChoice }) };
   }
 
   const mainTitle = threads.find((thread) => thread.id === mainThread)?.title ?? NEW_CHAT_TITLE;
@@ -192,9 +275,6 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
       <Sidebar
         threads={threads}
         onManageAccounts={onManageAccounts}
-        providers={providers}
-        newChatProvider={newChatProvider}
-        onNewChatProviderChange={setChosenProvider}
         selectedId={mainThread}
         onSelect={select}
         onNewChat={() => {
@@ -213,6 +293,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
               if (mainThread !== null && mainView.activeTurn !== null) interrupt(mainThread, mainView.activeTurn);
             }}
             busy={sender.isSending(mainThread) || mainView.activeTurn !== null}
+            {...pickerProps(pickersFor(mainThread))}
           />
         </ChatPane>
       </div>
@@ -228,6 +309,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
               store={store}
               tracker={tracker}
               isSending={sender.isSending(chat.threadId)}
+              {...pickerProps(pickersFor(chat.threadId))}
               onSend={(threadId, question, mode) => sendIn(threadId, question, mode)}
               onInterrupt={interrupt}
               onRetry={(threadId) => void sender.retry(threadId)}

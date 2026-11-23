@@ -9,7 +9,7 @@ import { BUSY_HINT } from "../../src/renderer/components/Composer";
 import { renderContextBlock } from "../../src/shared/context-format";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 import type { DisplayMessage } from "../../src/shared/thread-history";
-import { FakeMarginApi } from "../fakes/fake-margin-api";
+import { CODEX_DEFAULT_CHOICE, FakeMarginApi } from "../fakes/fake-margin-api";
 import { installFakeLayout, userScroll } from "../fakes/fake-layout";
 
 const OLD = asThreadId("old-1");
@@ -58,6 +58,7 @@ test("command_i_sends_the_context_of_the_pane_scrolled_last_before_the_question"
     threadId: OLD,
     question: "what is this?",
     contextText: context([["message 4 (assistant)", "answer 2"], ["message 5 (user)", "question 3"], ["message 6 (assistant)", "answer 3"]]),
+    choice: CODEX_DEFAULT_CHOICE,
   });
 });
 
@@ -81,7 +82,7 @@ test("enter_sends_without_context", async () => {
 
   await userEvent.type(screen.getByLabelText("Message"), "plain question{Enter}");
 
-  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: OLD, question: "plain question", contextText: null }]));
+  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: OLD, question: "plain question", contextText: null, choice: CODEX_DEFAULT_CHOICE }]));
 });
 
 test("command_i_changes_nothing_on_screen", async () => {

@@ -25,9 +25,6 @@ test("the_sidebar_lists_every_chat_marks_the_open_one_and_reports_clicks", async
         newChats += 1;
       }}
       onManageAccounts={() => undefined}
-      providers={["codex"]}
-      newChatProvider="codex"
-      onNewChatProviderChange={() => undefined}
     />,
   );
 
@@ -87,24 +84,4 @@ test("a_layout_that_cannot_be_read_is_shown_and_is_not_overwritten_by_choosing_a
 
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("will not overwrite it"));
   expect(api.layoutWrites).toEqual([]);
-});
-
-function sidebarWith(providers: ReadonlyArray<"codex" | "claude">, onChange: (provider: "codex" | "claude") => void): void {
-  render(<Sidebar threads={[]} selectedId={null} onSelect={() => undefined} onNewChat={() => undefined} onManageAccounts={() => undefined} providers={providers} newChatProvider={providers[0] ?? "codex"} onNewChatProviderChange={onChange} />);
-}
-
-test("the_provider_choice_appears_only_when_two_providers_are_signed_in", () => {
-  sidebarWith(["codex"], () => undefined);
-  expect(screen.queryByLabelText("New chats use")).toBeNull();
-});
-
-test("choosing_a_provider_reports_it_and_names_providers_in_plain_words", async () => {
-  const chosen: Array<string> = [];
-  sidebarWith(["codex", "claude"], (provider) => chosen.push(provider));
-  const choice = screen.getByLabelText("New chats use");
-
-  expect([...choice.querySelectorAll("option")].map((option) => [option.value, option.textContent])).toEqual([["codex", "OpenAI"], ["claude", "Claude"]]);
-  await userEvent.selectOptions(choice, "claude");
-
-  expect(chosen).toEqual(["claude"]);
 });

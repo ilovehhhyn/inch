@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import type { MarginApi } from "../../shared/ipc-contract";
+import type { ModelChoice } from "../../shared/models";
 import type { ThreadId } from "../../shared/provider-events";
 import type { ProviderId } from "../../shared/provider-id";
 import type { SendMode } from "../components/Composer";
@@ -33,13 +34,13 @@ function contextFor(mode: SendMode, tracker: ScrollTracker): Capture | null {
 
 export type Sender = Readonly<{
   /** Sends in `threadId`, or in a new thread of `provider` when null; `onThreadStarted` receives that new thread's id before the turn starts. */
-  send: (provider: ProviderId, threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void) => Promise<boolean>;
+  send: (provider: ProviderId, threadId: ThreadId | null, question: string, mode: SendMode, choice: ModelChoice, onThreadStarted: (threadId: ThreadId) => void) => Promise<boolean>;
   /** Sends the thread's last question again with the context it had; it reads the screen again for nobody. */
   retry: (threadId: ThreadId) => Promise<void>;
   isSending: (threadId: ThreadId | null) => boolean;
 }>;
 
-type LastSend = Readonly<{ provider: ProviderId; question: string; contextText: string | null }>;
+type LastSend = Readonly<{ provider: ProviderId; question: string; contextText: string | null; choice: ModelChoice }>;
 
 export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTracker, recorder: LatencyRecorder, report: (threadId: ThreadId | null, error: unknown) => void): Sender {
   const lastSent = useRef(new Map<ThreadId, LastSend>());
@@ -54,7 +55,7 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
   }, []);
 
   const send = useCallback(
-    async (provider: ProviderId, threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void): Promise<boolean> => {
+    async (provider: ProviderId, threadId: ThreadId | null, question: string, mode: SendMode, choice: ModelChoice, onThreadStarted: (threadId: ThreadId) => void): Promise<boolean> => {
       const key = threadId ?? NEW_CHAT_KEY;
       setPendingKey(key, true);
       let target = threadId;
@@ -68,8 +69,8 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
           target = await api.threadStart(provider);
           onThreadStarted(target);
         }
-        lastSent.current.set(target, { provider, question, contextText });
-        const turnId = await api.turnStart(provider, target, question, contextText);
+        lastSent.current.set(target, { provider, question, contextText, choice });
+        const turnId = await api.turnStart(provider, target, question, contextText, choice);
         mark?.acknowledged(turnId);
         store.begin(target, { turnId, question });
         return true;
@@ -90,7 +91,7 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
       if (last === undefined) return report(threadId, new Error("nothing to retry in this chat; type the question again"));
       setPendingKey(threadId, true);
       try {
-        const turnId = await api.turnStart(last.provider, threadId, last.question, last.contextText);
+        const turnId = await api.turnStart(last.provider, threadId, last.question, last.contextText, last.choice);
         store.begin(threadId, { turnId, question: last.question });
       } catch (error) {
         report(threadId, error);

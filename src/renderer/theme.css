@@ -362,7 +362,7 @@ code {
 .side-chats .composer {
   left: 16px;
   right: 16px;
-  bottom: 14px;
+  bottom: 34px;
   min-height: 52px;
   border-radius: 26px;
 }
@@ -400,4 +400,22 @@ code {
   border: 1px solid var(--composer-border);
   border-radius: 14px;
   color: var(--ink);
+}
+
+.composer-tools {
+  position: absolute;
+  left: 22px;
+  top: calc(100% + 4px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.picker {
+  border: 0;
+  background: transparent;
+  color: var(--sidebar-item-text);
+  font: 13px var(--font-ui);
+  cursor: pointer;
+  padding: 2px 0;
 }

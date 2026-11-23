@@ -6,7 +6,7 @@ import { expect, onTestFinished, test } from "vitest";
 
 import { App } from "../../src/renderer/app";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
-import { FakeMarginApi } from "../fakes/fake-margin-api";
+import { CODEX_DEFAULT_CHOICE, FakeMarginApi } from "../fakes/fake-margin-api";
 import { installFakeLayout } from "../fakes/fake-layout";
 
 const THREAD = asThreadId("thread-1");
@@ -21,7 +21,7 @@ test("a_plain_enter_message_starts_a_thread_sends_a_context_free_turn_and_stream
 
   await typeAndSend("what is lr?");
 
-  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: THREAD, question: "what is lr?", contextText: null }]));
+  await waitFor(() => expect(api.turnStarts).toEqual([{ threadId: THREAD, question: "what is lr?", contextText: null, choice: CODEX_DEFAULT_CHOICE }]));
   expect(api.calls.filter((call) => call === "threadStart")).toHaveLength(1);
   expect(await screen.findByText("what is lr?")).toBeInTheDocument();
   act(() => api.emitProvider({ type: "delta", threadId: THREAD, turnId: asTurnId("turn-1"), text: "The step size." }));
@@ -44,8 +44,8 @@ test("a_second_message_reuses_the_thread_once_the_answer_is_complete", async () 
 test("events_that_arrive_before_turn_start_answers_are_not_lost", async () => {
   const api = new FakeMarginApi();
   const original = api.turnStart;
-  api.turnStart = async (provider, threadId, question, contextText) => {
-    const turnId = await original(provider, threadId, question, contextText);
+  api.turnStart = async (provider, threadId, question, contextText, choice) => {
+    const turnId = await original(provider, threadId, question, contextText, choice);
     api.emitProvider({ type: "delta", threadId, turnId, text: "early text" });
     return turnId;
   };
