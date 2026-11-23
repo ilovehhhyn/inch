@@ -4,6 +4,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 
 import type { TurnId } from "../../shared/provider-events";
 import type { DisplayMessage } from "../state/thread-reducer";
+import { AttachmentChips } from "./AttachmentChips";
 
 export type MessageProps = Readonly<{
   message: DisplayMessage;
@@ -36,6 +37,7 @@ export function Message({ message, position, onOpenSideChat }: MessageProps): Re
   if (message.role === "user") {
     return (
       <div className="u" data-context-block="" data-context-label={label}>
+        {message.attachments === undefined ? null : <AttachmentChips chips={message.attachments} />}
         {message.text}
       </div>
     );

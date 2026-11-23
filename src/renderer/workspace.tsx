@@ -1,6 +1,7 @@
 // Draws the signed-in window: the chat list, the main chat, the right panel of side chats, and sends the user's questions.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
 
+import type { AttachmentChip } from "../shared/attachment";
 import type { MarginApi } from "../shared/ipc-contract";
 import type { Layout } from "../shared/layout";
 import { firstChoice, type ModelChoice, type ModelOption } from "../shared/models";
@@ -17,6 +18,7 @@ import { createScrollTracker } from "./context/scroll-tracker";
 import { LatencyRecorder } from "./metrics";
 import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
+import { useAttachments } from "./state/use-attachments";
 import { useSender } from "./state/use-sender";
 
 export type WorkspaceProps = Readonly<{
@@ -75,6 +77,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
     },
     [store],
   );
+  const mainAttachments = useAttachments(api);
   const sender = useSender(api, store, tracker, recorder, report);
   const firstProvider = providers[0];
   if (firstProvider === undefined) throw new Error("no provider is signed in; the window shows the sign-in page then");
@@ -209,7 +212,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   }
 
   /** Sends in `threadId`, or starts a chat of the new-chat provider when null; the provider is looked up here so a missing one is shown, not thrown. */
-  async function sendIn(threadId: ThreadId | null, question: string, mode: SendMode): Promise<boolean> {
+  async function sendIn(threadId: ThreadId | null, question: string, mode: SendMode, chips: ReadonlyArray<AttachmentChip>): Promise<boolean> {
     let provider: ProviderId;
     try {
       provider = threadId === null ? newChatProvider : providerOfThread(threadId);
@@ -231,7 +234,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
       return false;
     }
     const chosen = choice;
-    return sender.send(provider, threadId, question, mode, chosen, (started) => {
+    return sender.send(provider, threadId, question, mode, chosen, chips, (started) => {
       threadProviders.current.set(started, provider);
       setStartedChats((previous) => new Map(previous).set(started, provider));
       rememberChoice(started, chosen);
@@ -288,7 +291,12 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
           <Composer
             draft={draft}
             onDraftChange={onDraftChange}
-            onSend={(question, mode) => sendIn(mainThread, question, mode)}
+            onSend={async (question, mode) => {
+              const wasSent = await sendIn(mainThread, question, mode, mainAttachments.chips);
+              if (wasSent) mainAttachments.clear();
+              return wasSent;
+            }}
+            attachments={{ chips: mainAttachments.chips, onAdd: mainAttachments.add, onRemove: mainAttachments.remove }}
             onInterrupt={() => {
               if (mainThread !== null && mainView.activeTurn !== null) interrupt(mainThread, mainView.activeTurn);
             }}
@@ -310,7 +318,8 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
               tracker={tracker}
               isSending={sender.isSending(chat.threadId)}
               {...pickerProps(pickersFor(chat.threadId))}
-              onSend={(threadId, question, mode) => sendIn(threadId, question, mode)}
+              onSend={(threadId, question, mode, chips) => sendIn(threadId, question, mode, chips)}
+              api={api}
               onInterrupt={interrupt}
               onRetry={(threadId) => void sender.retry(threadId)}
               onClose={closeSideChat}

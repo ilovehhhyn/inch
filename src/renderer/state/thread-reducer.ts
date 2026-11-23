@@ -1,4 +1,5 @@
 // Turns provider events into the messages one thread displays; pure, so tests need no provider.
+import type { AttachmentSummary } from "../../shared/attachment";
 import type { ProviderEvent, TurnId } from "../../shared/provider-events";
 
 export type DisplayMessage = Readonly<{
@@ -8,6 +9,8 @@ export type DisplayMessage = Readonly<{
   role: "user" | "assistant";
   text: string;
   status: "streaming" | "done" | "failed";
+  /** The files attached to a user message; absent when there were none. */
+  attachments?: ReadonlyArray<AttachmentSummary>;
 }>;
 
 export type ThreadView = Readonly<{
@@ -25,12 +28,12 @@ function assistantId(turnId: TurnId): string {
 }
 
 /** Adds the user's message and an empty streaming answer, and makes `turnId` the one turn that may change them. */
-export function beginTurn(view: ThreadView, turn: Readonly<{ turnId: TurnId; question: string }>): ThreadView {
+export function beginTurn(view: ThreadView, turn: Readonly<{ turnId: TurnId; question: string; attachments?: ReadonlyArray<AttachmentSummary> }>): ThreadView {
   if (view.activeTurn !== null) throw new Error(`turn ${view.activeTurn} is still active; wait for it or interrupt it`);
   return {
     messages: [
       ...view.messages,
-      { id: `${turn.turnId}:user`, turnId: turn.turnId, role: "user", text: turn.question, status: "done" },
+      { id: `${turn.turnId}:user`, turnId: turn.turnId, role: "user", text: turn.question, status: "done", ...(turn.attachments === undefined || turn.attachments.length === 0 ? {} : { attachments: turn.attachments }) },
       { id: assistantId(turn.turnId), turnId: turn.turnId, role: "assistant", text: "", status: "streaming" },
     ],
     activeTurn: turn.turnId,

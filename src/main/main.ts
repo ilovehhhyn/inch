@@ -22,6 +22,7 @@ import { runGitDiff } from "./git-diff";
 import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
+import { clearStagedAttachments, createAttachmentContent, createAttachmentStore } from "./attachments";
 import { createChoiceStore } from "./choice-store";
 import { createSafeStorageSecretStore } from "./secret-store";
 import { appendLatencyRecord } from "./metrics-store";
@@ -73,10 +74,12 @@ type StartedCodex = Readonly<{ supervisor: CodexSupervisor; codexVersion: string
 let starting: Promise<StartedCodex> | undefined;
 
 /** The Codex provider: every call goes to the client that is running now, and the supervisor publishes its events. */
+const attachmentContent = createAttachmentContent();
+
 const codex = createSupervisedCodexProvider(async () => {
   if (starting === undefined) throw new Error("Codex has not started; wait for the window to finish starting");
   return (await starting).supervisor.ready();
-});
+}, attachmentContent);
 
 /** The providers in use; Claude is added once the app is ready, because its key store needs Electron's safeStorage. */
 const providers: Partial<Record<ProviderId, ChatProvider>> = { codex: codex.provider };
@@ -112,6 +115,10 @@ async function createEmptyWorkspace(): Promise<string> {
 
 function metricsPath(): string {
   return join(app.getPath("userData"), "metrics.jsonl");
+}
+
+function attachmentsDirectory(): string {
+  return join(app.getPath("userData"), "attachments");
 }
 
 function choicesPath(): string {
@@ -150,6 +157,7 @@ async function startCodex(): Promise<StartedCodex> {
 
 function registerHandlers(started: Promise<StartedCodex>): void {
   const choices = createChoiceStore(choicesPath());
+  const attachments = createAttachmentStore({ directory: attachmentsDirectory() });
   /** The running Codex client; a request made during a restart waits for it instead of failing. */
   const readyClient = async () => (await started).supervisor.ready();
   for (const provider of Object.values(providers)) provider.onEvent(sendProviderEvent);
@@ -172,6 +180,11 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     claudeSignOut: () => requireClaude().signOut(),
     modelsList: (provider) => providerFor(provider).listModels(),
     choiceRead: (threadId) => choices.read(threadId),
+    attachmentAdd: async (file) => {
+      const { id, kind, name, bytes } = await attachments.add(file);
+      return { id, kind, name, bytes };
+    },
+    attachmentDiscard: (id) => attachments.discard(id),
     threadStart: (provider) => providerFor(provider).startThread(),
     threadOpen: (provider, threadId) => providerFor(provider).readThread(threadId),
     threadList: async () => (await Promise.all(Object.values(providers).map((provider) => provider.listThreads()))).flat().sort((left, right) => right.updatedAtSec - left.updatedAtSec),
@@ -185,8 +198,9 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     diffRead: async (folder) => runGitDiff({ folder: requireSavedDiffFolder(folder, (await readLayout(layoutPath())).diffFolder), base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
-    turnStart: async (provider, threadId, question, context, choice) => {
-      const turnId = await providerFor(provider).startTurn(threadId, { question, context, model: choice.model, reasoning: choice.reasoning });
+    turnStart: async (provider, threadId, question, context, choice, attachmentIds) => {
+      const adopted = await attachments.adopt(threadId, attachmentIds);
+      const turnId = await providerFor(provider).startTurn(threadId, { question, context, model: choice.model, reasoning: choice.reasoning, attachments: adopted });
       await choices.write(threadId, choice);
       return turnId;
     },
@@ -195,7 +209,8 @@ function registerHandlers(started: Promise<StartedCodex>): void {
   });
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  await clearStagedAttachments(attachmentsDirectory()); // files staged by a session that ended before sending
   claude = createClaudeServices({
     store: createSafeStorageSecretStore({ safeStorage, directory: join(app.getPath("userData"), "secrets") }),
     ant: createLazyAnt(),
@@ -207,6 +222,7 @@ void app.whenReady().then(() => {
     credentials: claude.credentials,
     store: createClaudeThreadStore(join(app.getPath("userData"), "claude-threads")),
     clientOptions: claude.clientOptions,
+    content: attachmentContent,
   });
   const started = startCodex();
   starting = started;

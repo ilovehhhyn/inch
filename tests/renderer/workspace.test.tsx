@@ -44,8 +44,8 @@ test("a_second_message_reuses_the_thread_once_the_answer_is_complete", async () 
 test("events_that_arrive_before_turn_start_answers_are_not_lost", async () => {
   const api = new FakeMarginApi();
   const original = api.turnStart;
-  api.turnStart = async (provider, threadId, question, contextText, choice) => {
-    const turnId = await original(provider, threadId, question, contextText, choice);
+  api.turnStart = async (provider, threadId, question, contextText, choice, attachmentIds) => {
+    const turnId = await original(provider, threadId, question, contextText, choice, attachmentIds);
     api.emitProvider({ type: "delta", threadId, turnId, text: "early text" });
     return turnId;
   };

@@ -1,4 +1,5 @@
 // A hand-written MarginApi for renderer tests: scripted answers, recorded calls and an emitter for auth events.
+import { classifyAttachment, type AttachmentChip } from "../../src/shared/attachment";
 import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "../../src/shared/auth";
 import type { ProviderAccount } from "../../src/shared/chat-provider";
 import { DEFAULT_LAYOUT, type Layout } from "../../src/shared/layout";
@@ -95,6 +96,12 @@ export class FakeMarginApi implements MarginApi {
     ["claude", [{ provider: "claude", id: "claude-opus-5-5", label: "Claude Opus 5.5", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], defaultReasoning: "low", acceptsImages: true, acceptsPdfs: true }]],
   ]);
   readonly modelListCalls: Array<ProviderId> = [];
+  /** Every file the window attached, in order; a name in `attachmentRejections` is refused with that message. */
+  readonly attachmentAdds: Array<Readonly<{ name: string; bytes: Uint8Array }>> = [];
+  readonly attachmentRejections = new Map<string, string>();
+  readonly attachmentDiscards: Array<string> = [];
+  /** The attachment ids of every `turnStart`, in order, beside `turnStarts`. */
+  readonly turnAttachmentIds: Array<ReadonlyArray<string>> = [];
   /** The choice `choiceRead` answers per chat. */
   choices = new Map<ThreadId, ModelChoice>();
   modelsList = async (provider: ProviderId): Promise<ReadonlyArray<ModelOption>> => {
@@ -104,6 +111,15 @@ export class FakeMarginApi implements MarginApi {
     return models;
   };
   choiceRead = async (threadId: ThreadId): Promise<ModelChoice | null> => this.choices.get(threadId) ?? null;
+  attachmentAdd = async (name: string, bytes: Uint8Array): Promise<AttachmentChip> => {
+    const rejection = this.attachmentRejections.get(name);
+    if (rejection !== undefined) throw new Error(rejection);
+    this.attachmentAdds.push({ name, bytes });
+    return { id: `att-${this.attachmentAdds.length}`, kind: classifyAttachment(name, bytes), name, bytes: bytes.length };
+  };
+  attachmentDiscard = async (id: string): Promise<void> => {
+    this.attachmentDiscards.push(id);
+  };
   threadStart = async (provider: ProviderId): Promise<ThreadId> => {
     this.calls.push("threadStart");
     this.providerCalls.push(`threadStart:${provider}`);
@@ -136,8 +152,9 @@ export class FakeMarginApi implements MarginApi {
     this.layoutWrites.push(layout);
     this.layout = layout;
   };
-  turnStart = async (provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null, choice: ModelChoice): Promise<TurnId> => {
+  turnStart = async (provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null, choice: ModelChoice, attachmentIds: ReadonlyArray<string>): Promise<TurnId> => {
     this.providerCalls.push(`turnStart:${provider}`);
+    this.turnAttachmentIds.push(attachmentIds);
     this.turnStarts.push({ threadId, question, contextText, choice });
     this.choices.set(threadId, choice);
     this.turnCounter += 1;

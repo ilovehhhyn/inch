@@ -1,8 +1,10 @@
 // Holds the text the user is typing and turns Enter, Command-I and Escape into send and interrupt requests; the draft lives in the parent.
-import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactElement } from "react";
 
+import type { AttachmentChip } from "../../shared/attachment";
 import { choiceAfterModelChange, type ModelChoice, type ModelOption } from "../../shared/models";
 import type { ProviderId } from "../../shared/provider-id";
+import { AttachmentChips } from "./AttachmentChips";
 import { ModelPicker } from "./ModelPicker";
 import { ProviderPicker } from "./ProviderPicker";
 import { ReasoningPicker } from "./ReasoningPicker";
@@ -20,6 +22,13 @@ export type ComposerPickers = Readonly<{
   provider?: Readonly<{ providers: ReadonlyArray<ProviderId>; selected: ProviderId; onChange: (provider: ProviderId) => void }>;
 }>;
 
+/** The files attached to this composer; `onAdd` rejects with the reason a file was refused, and the composer shows it. */
+export type ComposerAttachments = Readonly<{
+  chips: ReadonlyArray<AttachmentChip>;
+  onAdd: (files: ReadonlyArray<File>) => Promise<void>;
+  onRemove: (index: number) => Promise<void>;
+}>;
+
 export type ComposerProps = Readonly<{
   draft: string;
   onDraftChange: (draft: string) => void;
@@ -32,6 +41,7 @@ export type ComposerProps = Readonly<{
   /** The accessible name of the text box; the main composer and each side chat composer need different ones. */
   label?: string;
   pickers?: ComposerPickers;
+  attachments?: ComposerAttachments;
 }>;
 
 function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null {
@@ -43,9 +53,10 @@ function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null 
   return null;
 }
 
-export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message", pickers }: ComposerProps): ReactElement {
+export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message", pickers, attachments }: ComposerProps): ReactElement {
   const [hint, setHint] = useState<string | null>(null);
 
+  const fileInput = useRef<HTMLInputElement | null>(null);
   const latestDraft = useRef(draft);
   useLayoutEffect(() => {
     latestDraft.current = draft;
@@ -55,6 +66,32 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
   function clearSent(sentDraft: string): void {
     const current = latestDraft.current;
     if (current.startsWith(sentDraft)) onDraftChange(current.slice(sentDraft.length));
+  }
+
+  function attachFiles(files: ReadonlyArray<File>): void {
+    if (attachments === undefined || files.length === 0) return;
+    attachments.onAdd(files).then(
+      () => setHint(null),
+      (error: unknown) => setHint(error instanceof Error ? error.message : String(error)),
+    );
+  }
+
+  function removeChip(index: number): void {
+    attachments?.onRemove(index).catch((error: unknown) => setHint(error instanceof Error ? error.message : String(error)));
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>): void {
+    const files = [...event.clipboardData.files];
+    if (files.length === 0) return;
+    event.preventDefault();
+    attachFiles(files);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>): void {
+    const files = [...event.dataTransfer.files];
+    if (files.length === 0) return;
+    event.preventDefault();
+    attachFiles(files);
   }
 
   function changeModel(modelId: string): void {
@@ -90,7 +127,7 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
   }
 
   return (
-    <div className="composer" data-context-occluder="">
+    <div className="composer" data-context-occluder="" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
       <textarea
         aria-label={label}
         className="composer-input"
@@ -102,15 +139,37 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
           onDraftChange(event.target.value);
         }}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
       />
+      {attachments === undefined ? null : (
+        <>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            aria-label="Choose files"
+            onChange={(event) => {
+              attachFiles([...(event.target.files ?? [])]);
+              event.target.value = ""; // the same file can then be chosen again
+            }}
+          />
+          <button type="button" className="attach" aria-label="Attach files" onClick={() => fileInput.current?.click()}>
+            +
+          </button>
+        </>
+      )}
       <button type="button" className="send" aria-label="Send" onClick={() => trySend("plain")}>
         ↑
       </button>
-      {hint === null ? null : (
-        <p className="composer-hint" role="status">
-          {hint}
-        </p>
-      )}
+      <div className="composer-above">
+        {hint === null ? null : (
+          <p className="composer-hint" role="status">
+            {hint}
+          </p>
+        )}
+        {attachments === undefined ? null : <AttachmentChips chips={attachments.chips} onRemove={removeChip} />}
+      </div>
       {pickers === undefined ? null : (
         <div className="composer-tools">
           {pickers.provider === undefined ? null : <ProviderPicker {...pickers.provider} />}
