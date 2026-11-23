@@ -36,3 +36,7 @@ node spikes/probe-app-server.mjs
 
 - The plan's first task measures the delay before the first word of an answer. That number has not been measured yet.
 - OpenAI's terms do not clearly allow a non-Codex app to use a ChatGPT plan through Codex sign-in. The plan keeps API-key sign-in as an alternative.
+
+## Status and limits
+
+- Codex keeps its own OpenAI credentials (ChatGPT tokens or an API key) in its own store under `~/.codex`. Margin stores no OpenAI secret and never sees a token. The plan's rule that secrets live only in `safeStorage` or the `ant` profile applies to Margin's own storage; the OpenAI sign-in route delegates to Codex, as the spec requires.
