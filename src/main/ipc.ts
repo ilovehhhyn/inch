@@ -3,6 +3,8 @@ import { clipboard, ipcMain } from "electron";
 
 import { parseLoginKind, type AccountSummary, type LoginKind, type LoginStarted } from "../shared/auth";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
+import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/provider-events";
+import type { HistoryMessage, ThreadSummary } from "../shared/thread-history";
 
 export type IpcHandlers = Readonly<{
   startupStatus: () => Promise<StartupStatus>;
@@ -11,11 +13,20 @@ export type IpcHandlers = Readonly<{
   authApiKey: (apiKey: string) => Promise<void>;
   authCancel: (loginId: string) => Promise<void>;
   authLogout: () => Promise<void>;
+  threadStart: () => Promise<ThreadId>;
+  threadOpen: (threadId: ThreadId) => Promise<ReadonlyArray<HistoryMessage>>;
+  threadList: () => Promise<ReadonlyArray<ThreadSummary>>;
+  turnStart: (threadId: ThreadId, question: string, contextText: string | null) => Promise<TurnId>;
+  turnInterrupt: (threadId: ThreadId, turnId: TurnId) => Promise<void>;
 }>;
 
 function requireString(value: unknown, name: string): string {
   if (typeof value !== "string") throw new Error(`${name} must be a string, got ${typeof value}`);
   return value;
+}
+
+function requireNullableString(value: unknown, name: string): string | null {
+  return value === null ? null : requireString(value, name);
 }
 
 export function registerIpc(handlers: IpcHandlers): void {
@@ -28,4 +39,13 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.authApiKey, (_event, apiKey: unknown) => handlers.authApiKey(requireString(apiKey, "apiKey")));
   ipcMain.handle(IPC_CHANNELS.authCancel, (_event, loginId: unknown) => handlers.authCancel(requireString(loginId, "loginId")));
   ipcMain.handle(IPC_CHANNELS.authLogout, () => handlers.authLogout());
+  ipcMain.handle(IPC_CHANNELS.threadStart, () => handlers.threadStart());
+  ipcMain.handle(IPC_CHANNELS.threadOpen, (_event, threadId: unknown) => handlers.threadOpen(asThreadId(requireString(threadId, "threadId"))));
+  ipcMain.handle(IPC_CHANNELS.threadList, () => handlers.threadList());
+  ipcMain.handle(IPC_CHANNELS.turnStart, (_event, threadId: unknown, question: unknown, contextText: unknown) =>
+    handlers.turnStart(asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), requireNullableString(contextText, "contextText")),
+  );
+  ipcMain.handle(IPC_CHANNELS.turnInterrupt, (_event, threadId: unknown, turnId: unknown) =>
+    handlers.turnInterrupt(asThreadId(requireString(threadId, "threadId")), asTurnId(requireString(turnId, "turnId"))),
+  );
 }

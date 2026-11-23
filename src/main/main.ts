@@ -4,9 +4,11 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { summarizeAccount } from "../codex/codex-client";
+import { summarizeThread, toHistory } from "../codex/thread-history";
 import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
+import type { ProviderEvent } from "../shared/provider-events";
 import { StartupError } from "../shared/startup-error";
 import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex } from "./codex-locator";
@@ -39,6 +41,10 @@ function sendToWindows(event: AuthEvent): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.authChanged, event);
 }
 
+function sendProviderEvent(event: ProviderEvent): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.providerEvent, event);
+}
+
 type StartedCodex = Readonly<{ supervisor: CodexSupervisor; codexVersion: string }>;
 
 /** Margin's own empty directory: every thread uses it as `cwd`, so Codex has nothing of the user's to read. */
@@ -58,7 +64,7 @@ async function startCodex(): Promise<StartedCodex> {
       client.onAccountEvent(sendToWindows);
       client.onLoginCompleted((event) => sendToWindows({ type: "loginCompleted", success: event.success, error: event.error }));
     },
-    onEvent: (event) => log(`provider event ${event.type}`),
+    onEvent: sendProviderEvent,
     onRestartFailed: (error) => log(`codex restart failed: ${error.message}`),
     log,
   });
@@ -81,6 +87,18 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
     authApiKey: async (apiKey) => (await starting).supervisor.client.startApiKeyLogin(apiKey),
     authCancel: async (loginId) => (await starting).supervisor.client.cancelLogin(loginId),
     authLogout: async () => (await starting).supervisor.client.logout(),
+    threadStart: async () => {
+      const { client } = (await starting).supervisor;
+      return client.startThread({ model: await client.defaultModelId() });
+    },
+    threadOpen: async (threadId) => {
+      const { client } = (await starting).supervisor;
+      await client.resumeThread(threadId);
+      return toHistory(await client.readThread(threadId));
+    },
+    threadList: async () => (await (await starting).supervisor.client.listThreads()).map(summarizeThread),
+    turnStart: async (threadId, question, contextText) => (await starting).supervisor.client.startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),
+    turnInterrupt: async (threadId, turnId) => (await starting).supervisor.client.interruptTurn(threadId, turnId),
   });
 }
 

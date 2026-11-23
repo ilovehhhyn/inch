@@ -1,6 +1,8 @@
 // A hand-written MarginApi for renderer tests: scripted answers, recorded calls and an emitter for auth events.
 import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "../../src/shared/auth";
 import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
+import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../../src/shared/provider-events";
+import type { HistoryMessage, ThreadSummary } from "../../src/shared/thread-history";
 
 export const SIGNED_IN_CHATGPT: AccountSummary = { signedIn: true, accountType: "chatgpt", planType: "plus" };
 
@@ -10,7 +12,16 @@ export class FakeMarginApi implements MarginApi {
   loginStarted: LoginStarted = { kind: "chatgpt", loginId: "login-1" };
   readonly calls: Array<string> = [];
   readonly apiKeys: Array<string> = [];
+  /** Every `turn/start` the window sent: the exact arguments, in order. */
+  readonly turnStarts: Array<Readonly<{ threadId: ThreadId; question: string; contextText: string | null }>> = [];
+  readonly interrupts: Array<Readonly<{ threadId: ThreadId; turnId: TurnId }>> = [];
+  threads: Array<ThreadSummary> = [];
+  histories = new Map<ThreadId, ReadonlyArray<HistoryMessage>>();
+  /** Ids handed out by `threadStart` and `turnStart`, in order of use. */
+  nextThreadIds: Array<string> = ["thread-1", "thread-2", "thread-3"];
+  private turnCounter = 0;
   private readonly handlers = new Set<(event: AuthEvent) => void>();
+  private readonly providerHandlers = new Set<(event: ProviderEvent) => void>();
 
   startupStatus = async (): Promise<StartupStatus> => this.startup;
   copyText = async (): Promise<void> => undefined;
@@ -35,6 +46,36 @@ export class FakeMarginApi implements MarginApi {
       this.handlers.delete(handler);
     };
   };
+
+  threadStart = async (): Promise<ThreadId> => {
+    this.calls.push("threadStart");
+    const id = this.nextThreadIds.shift();
+    if (id === undefined) throw new Error("the fake has no thread id left; add one to nextThreadIds");
+    return asThreadId(id);
+  };
+  threadOpen = async (threadId: ThreadId): Promise<ReadonlyArray<HistoryMessage>> => {
+    this.calls.push(`threadOpen:${threadId}`);
+    return this.histories.get(threadId) ?? [];
+  };
+  threadList = async (): Promise<ReadonlyArray<ThreadSummary>> => this.threads;
+  turnStart = async (threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId> => {
+    this.turnStarts.push({ threadId, question, contextText });
+    this.turnCounter += 1;
+    return asTurnId(`turn-${this.turnCounter}`);
+  };
+  turnInterrupt = async (threadId: ThreadId, turnId: TurnId): Promise<void> => {
+    this.interrupts.push({ threadId, turnId });
+  };
+  onProviderEvent = (handler: (event: ProviderEvent) => void): (() => void) => {
+    this.providerHandlers.add(handler);
+    return () => {
+      this.providerHandlers.delete(handler);
+    };
+  };
+
+  emitProvider(event: ProviderEvent): void {
+    for (const handler of this.providerHandlers) handler(event);
+  }
 
   emit(event: AuthEvent): void {
     for (const handler of this.handlers) handler(event);

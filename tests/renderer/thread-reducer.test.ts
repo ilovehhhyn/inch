@@ -20,8 +20,8 @@ test("begin_turn_adds_the_user_message_and_an_empty_streaming_answer", () => {
 
   expect(view.activeTurn).toBe(TURN);
   expect(view.messages).toEqual([
-    { id: "turn-1:user", role: "user", text: "what is lr?", status: "done" },
-    { id: "turn-1:assistant", role: "assistant", text: "", status: "streaming" },
+    { id: "turn-1:user", turnId: "turn-1", role: "user", text: "what is lr?", status: "done" },
+    { id: "turn-1:assistant", turnId: "turn-1", role: "assistant", text: "", status: "streaming" },
   ]);
 });
 

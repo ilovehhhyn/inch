@@ -3,6 +3,8 @@ import type { ProviderEvent, TurnId } from "../../shared/provider-events";
 
 export type DisplayMessage = Readonly<{
   id: string;
+  /** The turn that produced the message; a side chat forks through it. */
+  turnId: TurnId;
   role: "user" | "assistant";
   text: string;
   status: "streaming" | "done" | "failed";
@@ -28,8 +30,8 @@ export function beginTurn(view: ThreadView, turn: Readonly<{ turnId: TurnId; que
   return {
     messages: [
       ...view.messages,
-      { id: `${turn.turnId}:user`, role: "user", text: turn.question, status: "done" },
-      { id: assistantId(turn.turnId), role: "assistant", text: "", status: "streaming" },
+      { id: `${turn.turnId}:user`, turnId: turn.turnId, role: "user", text: turn.question, status: "done" },
+      { id: assistantId(turn.turnId), turnId: turn.turnId, role: "assistant", text: "", status: "streaming" },
     ],
     activeTurn: turn.turnId,
     error: null,
