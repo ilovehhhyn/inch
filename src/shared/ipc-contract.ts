@@ -1,6 +1,7 @@
 // Names the IPC channels and the API object the preload script gives the renderer; the one place both sides agree.
 import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "./auth";
 import type { Layout } from "./layout";
+import type { LatencyRecord } from "./latency-record";
 import type { ProviderEvent, ThreadId, TurnId } from "./provider-events";
 import type { StartupErrorInfo } from "./startup-error";
 import type { HistoryMessage, ThreadSummary } from "./thread-history";
@@ -25,6 +26,7 @@ export const IPC_CHANNELS = {
   turnStart: "turn:start",
   turnInterrupt: "turn:interrupt",
   providerEvent: "provider:event",
+  metricsAppend: "metrics:append",
   fault: "startup:fault",
 } as const;
 
@@ -55,6 +57,8 @@ export type MarginApi = Readonly<{
   /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message. */
   turnStart(threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId>;
   turnInterrupt(threadId: ThreadId, turnId: TurnId): Promise<void>;
+  /** Appends one latency record (numbers only) to metrics.jsonl in Margin's application support folder. */
+  metricsAppend(record: LatencyRecord): Promise<void>;
   /** A problem found after start-up that the window must show in full. */
   onFault(handler: (info: StartupErrorInfo) => void): () => void;
   onProviderEvent(handler: (event: ProviderEvent) => void): () => void;

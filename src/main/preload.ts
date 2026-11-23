@@ -24,6 +24,7 @@ const api: MarginApi = {
   layoutWrite: (layout) => ipcRenderer.invoke(IPC_CHANNELS.layoutWrite, layout),
   turnStart: (threadId, question, contextText) => ipcRenderer.invoke(IPC_CHANNELS.turnStart, threadId, question, contextText),
   turnInterrupt: (threadId, turnId) => ipcRenderer.invoke(IPC_CHANNELS.turnInterrupt, threadId, turnId),
+  metricsAppend: (record) => ipcRenderer.invoke(IPC_CHANNELS.metricsAppend, record),
   onFault: (handler) => {
     const listener = (_event: IpcRendererEvent, info: StartupErrorInfo): void => handler(info);
     ipcRenderer.on(IPC_CHANNELS.fault, listener);

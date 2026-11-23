@@ -17,6 +17,7 @@ import { runGitDiff } from "./git-diff";
 import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
+import { appendLatencyRecord } from "./metrics-store";
 
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
@@ -62,6 +63,10 @@ async function createEmptyWorkspace(): Promise<string> {
   const path = join(app.getPath("userData"), "empty-workspace");
   await mkdir(path, { recursive: true });
   return path;
+}
+
+function metricsPath(): string {
+  return join(app.getPath("userData"), "metrics.jsonl");
 }
 
 function layoutPath(): string {
@@ -129,6 +134,7 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
     turnStart: async (threadId, question, contextText) => (await readyClient()).startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),
     turnInterrupt: async (threadId, turnId) => (await readyClient()).interruptTurn(threadId, turnId),
+    metricsAppend: (record) => appendLatencyRecord(metricsPath(), record),
   });
 }
 

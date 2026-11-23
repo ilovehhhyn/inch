@@ -4,9 +4,10 @@ import { useCallback, useRef, useState } from "react";
 import type { MarginApi } from "../../shared/ipc-contract";
 import type { ThreadId } from "../../shared/provider-events";
 import type { SendMode } from "../components/Composer";
-import { captureContext, CAPTURE_BUDGET_MS } from "../context/capture-context";
+import { captureContext, CAPTURE_BUDGET_MS, type Capture } from "../context/capture-context";
 import { asPaneId, type PaneId } from "../context/pane-id";
 import type { ScrollTracker } from "../context/scroll-tracker";
+import type { LatencyRecorder, SendMark } from "../metrics";
 import type { ThreadStore } from "./thread-store";
 
 /** The key under which a send with no thread yet is tracked. */
@@ -19,14 +20,14 @@ function focusedPaneId(): PaneId | null {
 }
 
 /** Reads the pane scrolled last (else the focused pane) for Command-I; Enter reads nothing. Either send starts a new scroll window. */
-function contextFor(mode: SendMode, tracker: ScrollTracker): string | null {
+function contextFor(mode: SendMode, tracker: ScrollTracker): Capture | null {
   const paneId = tracker.choosePane(focusedPaneId());
   tracker.markMessageSent();
   if (mode === "plain") return null;
   if (paneId === null) throw new Error("no pane to read: scroll a pane or click into one, then press Command-I");
   const capture = captureContext(paneId);
   if (capture.elapsedMs > CAPTURE_BUDGET_MS) console.warn(`reading ${paneId} took ${capture.elapsedMs.toFixed(1)} ms, over the ${CAPTURE_BUDGET_MS} ms budget`);
-  return capture.text;
+  return capture;
 }
 
 export type Sender = Readonly<{
@@ -39,7 +40,7 @@ export type Sender = Readonly<{
 
 type LastSend = Readonly<{ question: string; contextText: string | null }>;
 
-export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTracker, report: (threadId: ThreadId | null, error: unknown) => void): Sender {
+export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTracker, recorder: LatencyRecorder, report: (threadId: ThreadId | null, error: unknown) => void): Sender {
   const lastSent = useRef(new Map<ThreadId, LastSend>());
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const setPendingKey = useCallback((key: string, isPending: boolean) => {
@@ -56,24 +57,30 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
       const key = threadId ?? NEW_CHAT_KEY;
       setPendingKey(key, true);
       let target = threadId;
+      const startMs = performance.now();
+      let mark: SendMark | null = null;
       try {
-        const contextText = contextFor(mode, tracker);
+        const capture = contextFor(mode, tracker);
+        const contextText = capture === null ? null : capture.text;
+        if (capture !== null) mark = recorder.begin({ paneKind: capture.paneKind, blockCount: capture.blockCount, contextChars: capture.text.length, captureMs: capture.elapsedMs }, startMs);
         if (target === null) {
           target = await api.threadStart();
           onThreadStarted(target);
         }
         lastSent.current.set(target, { question, contextText });
         const turnId = await api.turnStart(target, question, contextText);
+        mark?.acknowledged(turnId);
         store.begin(target, { turnId, question });
         return true;
       } catch (error) {
+        mark?.failed();
         report(target, error);
         return false;
       } finally {
         setPendingKey(key, false);
       }
     },
-    [api, store, tracker, report, setPendingKey],
+    [api, store, tracker, recorder, report, setPendingKey],
   );
 
   const retry = useCallback(

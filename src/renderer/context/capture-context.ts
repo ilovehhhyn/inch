@@ -9,7 +9,7 @@ export const CAPTURE_BUDGET_MS = 20;
 
 export const CAPTURE_MEASURE_NAME = "margin:capture";
 
-export type Capture = Readonly<{ text: string; elapsedMs: number }>;
+export type Capture = Readonly<{ text: string; elapsedMs: number; paneKind: "chat" | "diff"; blockCount: number }>;
 
 /** Returns the MARGIN SCREEN CONTEXT text for `paneId` and records a `margin:capture` User Timing entry. */
 export function captureContext(paneId: PaneId, now: () => number = () => performance.now()): Capture {
@@ -19,5 +19,5 @@ export function captureContext(paneId: PaneId, now: () => number = () => perform
   const text = renderContextBlock({ paneKind: kind, paneTitle: title, blocks });
   const end = now();
   performance.measure(CAPTURE_MEASURE_NAME, { start, end });
-  return { text, elapsedMs: end - start };
+  return { text, elapsedMs: end - start, paneKind: kind, blockCount: blocks.length };
 }

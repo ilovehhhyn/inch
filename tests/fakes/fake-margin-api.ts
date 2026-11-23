@@ -3,6 +3,7 @@ import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "../../s
 import { DEFAULT_LAYOUT, type Layout } from "../../src/shared/layout";
 import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../../src/shared/provider-events";
+import type { LatencyRecord } from "../../src/shared/latency-record";
 import type { StartupErrorInfo } from "../../src/shared/startup-error";
 import type { HistoryMessage, ThreadSummary } from "../../src/shared/thread-history";
 
@@ -16,6 +17,7 @@ export class FakeMarginApi implements MarginApi {
   readonly apiKeys: Array<string> = [];
   /** Every `turn/start` the window sent: the exact arguments, in order. */
   readonly turnStarts: Array<Readonly<{ threadId: ThreadId; question: string; contextText: string | null }>> = [];
+  readonly latencyRecords: Array<LatencyRecord> = [];
   readonly interrupts: Array<Readonly<{ threadId: ThreadId; turnId: TurnId }>> = [];
   threads: Array<ThreadSummary> = [];
   histories = new Map<ThreadId, ReadonlyArray<HistoryMessage>>();
@@ -91,6 +93,9 @@ export class FakeMarginApi implements MarginApi {
     this.turnStarts.push({ threadId, question, contextText });
     this.turnCounter += 1;
     return asTurnId(`turn-${this.turnCounter}`);
+  };
+  metricsAppend = async (record: LatencyRecord): Promise<void> => {
+    this.latencyRecords.push(record);
   };
   turnInterrupt = async (threadId: ThreadId, turnId: TurnId): Promise<void> => {
     this.interrupts.push({ threadId, turnId });

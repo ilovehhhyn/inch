@@ -12,6 +12,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SideChatPane } from "./components/SideChatPane";
 import { DIFF_PANE_ID, MAIN_PANE_ID, sidePaneId } from "./context/pane-id";
 import { createScrollTracker } from "./context/scroll-tracker";
+import { LatencyRecorder } from "./metrics";
 import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
 import { useSender } from "./state/use-sender";
@@ -35,6 +36,7 @@ function messageOf(error: unknown): string {
 export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
+  const recorder = useMemo(() => new LatencyRecorder({ sink: (record) => api.metricsAppend(record), now: monotonicClock, wallClock: () => new Date() }), [api]);
   const [threads, setThreads] = useState<ReadonlyArray<ThreadSummary>>([]);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
@@ -52,7 +54,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     },
     [store],
   );
-  const sender = useSender(api, store, tracker, report);
+  const sender = useSender(api, store, tracker, recorder, report);
 
   const applyLayout = useCallback((next: Layout): void => {
     latestLayout.current = next;
@@ -67,10 +69,11 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     refreshThreads();
     api.layoutRead().then(applyLayout, (error: unknown) => setProblem(`Could not read the saved layout: ${messageOf(error)}`));
     return api.onProviderEvent((event) => {
+      recorder.observe(event);
       store.apply(event);
       if (event.type === "completed") refreshThreads();
     });
-  }, [api, store, refreshThreads, applyLayout]);
+  }, [api, store, recorder, refreshThreads, applyLayout]);
 
   const mainTurnIds = useMemo(() => new Set(mainView.messages.map((message) => message.turnId)), [mainView.messages]);
   const visibleSideChats = useMemo(() => (layout?.sideChats ?? []).filter((chat) => mainTurnIds.has(chat.forkedFromTurn)), [layout, mainTurnIds]);

@@ -170,3 +170,29 @@ test("text_under_the_composer_and_fade_is_not_sent_as_visible", async () => {
   expect(sent).not.toContain("message 8 (assistant)");
   expect(sent).not.toContain("answer 5");
 });
+
+test("command_i_writes_one_latency_record_with_no_text_and_enter_writes_none", async () => {
+  const api = new FakeMarginApi();
+  const view = await openOldChat(api);
+  act(() => userScroll(view, 300));
+  await userEvent.type(screen.getByLabelText("Message"), "plain one{Enter}");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => api.emitProvider({ type: "completed", threadId: OLD, turnId: asTurnId("turn-1"), status: "completed", error: null }));
+  expect(api.latencyRecords).toEqual([]);
+
+  act(() => userScroll(view, 300));
+  await userEvent.type(screen.getByLabelText("Message"), "with context");
+  await userEvent.keyboard(COMMAND_I);
+  await waitFor(() => expect(api.turnStarts).toHaveLength(2));
+  act(() => api.emitProvider({ type: "delta", threadId: OLD, turnId: asTurnId("turn-2"), text: "ok" }));
+
+  await waitFor(() => expect(api.latencyRecords).toHaveLength(1));
+  const record = api.latencyRecords[0];
+  const sent = api.turnStarts[1]?.contextText ?? "";
+  expect(record?.paneKind).toBe("chat");
+  expect(record?.blockCount).toBe((sent.match(/^--- /gm) ?? []).length);
+  expect(record?.blockCount).toBeGreaterThan(0);
+  expect(record?.contextChars).toBe(sent.length);
+  expect(JSON.stringify(record)).not.toContain("with context");
+  expect(JSON.stringify(record)).not.toContain("answer");
+});

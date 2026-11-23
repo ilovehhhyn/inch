@@ -26,6 +26,7 @@ export type IpcHandlers = Readonly<{
   layoutWrite: (layout: Layout) => Promise<void>;
   turnStart: (threadId: ThreadId, question: string, contextText: string | null) => Promise<TurnId>;
   turnInterrupt: (threadId: ThreadId, turnId: TurnId) => Promise<void>;
+  metricsAppend: (record: unknown) => Promise<void>;
 }>;
 
 function requireString(value: unknown, name: string): string {
@@ -56,6 +57,7 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.turnStart, (_event, threadId: unknown, question: unknown, contextText: unknown) =>
     handlers.turnStart(asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), parseContextText(contextText)),
   );
+  ipcMain.handle(IPC_CHANNELS.metricsAppend, (_event, record: unknown) => handlers.metricsAppend(record));
   ipcMain.handle(IPC_CHANNELS.turnInterrupt, (_event, threadId: unknown, turnId: unknown) =>
     handlers.turnInterrupt(asThreadId(requireString(threadId, "threadId")), asTurnId(requireString(turnId, "turnId"))),
   );
