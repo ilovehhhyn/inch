@@ -8,6 +8,7 @@ import { expect, test } from "vitest";
 import { createClaudeProvider, CLAUDE_DEFAULT_EFFORT, CLAUDE_DEFAULT_MODEL, CLAUDE_MAX_TOKENS, NOT_SIGNED_IN, STOPPED_BEFORE_ANY_ANSWER } from "../../src/claude/claude-provider";
 import { createClaudeThreadStore, type ClaudeThreadStore } from "../../src/claude/claude-thread-store";
 import type { ClaudeCredential } from "../../src/claude/claude-credentials";
+import type { Attachment } from "../../src/shared/attachment";
 import type { ChatProvider } from "../../src/shared/chat-provider";
 import { renderContextBlock, type ScreenContext } from "../../src/shared/context-format";
 import { MARGIN_INSTRUCTIONS } from "../../src/shared/margin-instructions";
@@ -567,4 +568,15 @@ test("another_error_does_not_report_a_rejected_credential", async () => {
   await runTurn(context, threadId, "hello");
 
   expect(order).toEqual([]);
+});
+
+test("an_image_over_five_megabytes_is_refused_before_any_request_and_nothing_is_stored", async () => {
+  const context = await setup();
+  const threadId = await context.provider.startThread();
+  const big: Attachment = { id: "x", kind: "image", name: "big.png", storedPath: "/nonexistent/big.png", bytes: 5 * 1024 * 1024 + 1, mediaType: "image/png" };
+
+  await expect(context.provider.startTurn(threadId, { question: "q", context: null, model: "claude-opus-5-5", reasoning: "low", attachments: [big] })).rejects.toThrow("cannot send image `big.png` to Claude");
+
+  expect(context.fake.requests).toEqual([]);
+  expect(await context.store.list()).toEqual([]);
 });

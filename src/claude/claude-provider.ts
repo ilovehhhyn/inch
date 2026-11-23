@@ -10,6 +10,7 @@ import { MARGIN_INSTRUCTIONS } from "../shared/margin-instructions";
 import { asThreadId, asTurnId, CLAUDE_SIGN_IN_EXPIRED, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 import { betasFor, claudeAccountOf, createClaudeClient, type ClaudeClientOptions, type ClaudeCredential } from "./claude-credentials";
+import { requireWithinClaudeLimits } from "./claude-limits";
 import { contentForReplay } from "./replay-content";
 import { CLAUDE_EFFORTS, parseClaudeEffort, replayMessages, type ClaudeEffort, type ClaudeThreadFile, type ClaudeThreadStore, type StoredMessage } from "./claude-thread-store";
 
@@ -225,6 +226,7 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
       const credential = await options.credentials();
       if (credential === null) throw new Error(NOT_SIGNED_IN);
       const file: ClaudeThreadFile = { ...(await load(threadId)), model: input.model, effort: parseClaudeEffort(input.reasoning) };
+      requireWithinClaudeLimits(Buffer.byteLength(JSON.stringify(replayMessages(file))) + Buffer.byteLength(MARGIN_INSTRUCTIONS), input.attachments);
       const content: Array<Anthropic.Beta.BetaContentBlockParam> = [
         ...(await attachmentBlocks(input.attachments, options.content)),
         ...(input.context === null ? [] : [{ type: "text" as const, text: renderContextBlock(input.context) }]),
