@@ -32,7 +32,7 @@ test("deltas_append_to_the_streaming_message_in_order", () => {
   expect(view.messages[1]).toMatchObject({ role: "assistant", text: "The learning rate", status: "streaming" });
 });
 
-test("deltas_for_another_thread_are_ignored", () => {
+test("deltas_for_another_turn_are_ignored_by_the_reducer", () => {
   const before = started();
 
   const after = reduceThread(before, delta("stray", asTurnId("turn-9"), asThreadId("thread-9")));
@@ -40,8 +40,9 @@ test("deltas_for_another_thread_are_ignored", () => {
   expect(after).toBe(before);
 });
 
-test("deltas_before_any_turn_started_are_ignored", () => {
-  expect(reduceThread(EMPTY_THREAD, delta("stray"))).toBe(EMPTY_THREAD);
+// The reducer never holds a delta back: ThreadStore keeps deltas that arrive before their turn begins and replays them (see thread-store.test.ts).
+test("the_reducer_leaves_a_view_with_no_active_turn_unchanged_for_any_delta", () => {
+  expect(reduceThread(EMPTY_THREAD, delta("early"))).toBe(EMPTY_THREAD);
 });
 
 test("turn_completed_marks_the_message_done_and_clears_the_active_turn", () => {
