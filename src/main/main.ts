@@ -20,7 +20,7 @@ import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex, nodeStartupServices } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
 import { runGitDiff } from "./git-diff";
-import { requireSavedDiffFolder } from "./ipc-arguments";
+import { requireChosenDiffFolder, requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
 import { lazyUntilItFails } from "./lazy-resolver";
@@ -232,6 +232,8 @@ async function listAllThreads(): Promise<ReadonlyArray<ThreadSummary>> {
 }
 
 function registerHandlers(): void {
+  /** The folders the dialog returned in this session; only these may become the saved diff folder. */
+  const chosenDiffFolders = new Set<string>();
   const choices = createChoiceStore(choicesPath());
   const attachments = createAttachmentStore({ directory: attachmentsDirectory() });
   const startTurn = createTurnStarter({ providerFor, choices, attachments });
@@ -266,11 +268,16 @@ function registerHandlers(): void {
       const window = BrowserWindow.getFocusedWindow();
       const options = { title: "Choose a folder for the code diff", properties: ["openDirectory" as const] };
       const result = await (window === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options));
-      return result.canceled ? null : (result.filePaths[0] ?? null);
+      const folder = result.canceled ? null : (result.filePaths[0] ?? null);
+      if (folder !== null) chosenDiffFolders.add(folder);
+      return folder;
     },
     diffRead: async (folder) => runGitDiff({ folder: requireSavedDiffFolder(folder, (await readLayout(layoutPath())).diffFolder), base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
-    layoutWrite: (layout) => writeLayout(layoutPath(), layout),
+    layoutWrite: async (layout) => {
+      requireChosenDiffFolder(layout.diffFolder, (await readLayout(layoutPath())).diffFolder, chosenDiffFolders);
+      await writeLayout(layoutPath(), layout);
+    },
     turnStart: startTurn,
     turnInterrupt: (provider, threadId, turnId) => providerFor(provider).interruptTurn(threadId, turnId),
     metricsAppend: (record) => appendLatencyRecord(metricsPath(), record),

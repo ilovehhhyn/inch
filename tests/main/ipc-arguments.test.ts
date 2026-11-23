@@ -1,7 +1,7 @@
 // Invariant: the main process accepts screen context only as a well-formed, bounded MARGIN SCREEN CONTEXT block or null.
 import { expect, test } from "vitest";
 
-import { MAX_ATTACHMENT_BYTES, MAX_CONTEXT_TEXT_CHARS, parseAttachmentFile, parseAttachmentIds, parseContextText, parseModelChoice, parseScreenContext, requireSavedDiffFolder } from "../../src/main/ipc-arguments";
+import { MAX_ATTACHMENT_BYTES, MAX_CONTEXT_TEXT_CHARS, parseAttachmentFile, parseAttachmentIds, parseContextText, parseModelChoice, parseScreenContext, requireChosenDiffFolder, requireSavedDiffFolder } from "../../src/main/ipc-arguments";
 import { renderContextBlock } from "../../src/shared/context-format";
 
 const BLOCK = renderContextBlock({ paneKind: "diff", paneTitle: "repo", blocks: [{ label: "train.py line 39", text: "x" }] });
@@ -27,6 +27,16 @@ test("a_diff_folder_other_than_the_saved_one_is_rejected", () => {
   expect(requireSavedDiffFolder("/Users/example/code/repo", "/Users/example/code/repo")).toBe("/Users/example/code/repo");
   expect(() => requireSavedDiffFolder("/etc", "/Users/example/code/repo")).toThrow(/diff folder \/etc is not the folder chosen in Margin/);
   expect(() => requireSavedDiffFolder("/etc", null)).toThrow(/no diff folder has been chosen/);
+});
+
+test("a_layout_may_keep_clear_or_set_the_diff_folder_only_to_one_the_dialog_returned", () => {
+  const chosen = new Set(["/Users/example/code/new"]);
+
+  expect(requireChosenDiffFolder("/Users/example/code/repo", "/Users/example/code/repo", chosen)).toBe("/Users/example/code/repo");
+  expect(requireChosenDiffFolder(null, "/Users/example/code/repo", chosen)).toBeNull();
+  expect(requireChosenDiffFolder("/Users/example/code/new", "/Users/example/code/repo", chosen)).toBe("/Users/example/code/new");
+  expect(() => requireChosenDiffFolder("/etc", "/Users/example/code/repo", chosen)).toThrow("diff folder /etc was not chosen with the folder dialog; choose it with the folder button");
+  expect(() => requireChosenDiffFolder("/etc", null, new Set())).toThrow(/was not chosen with the folder dialog/);
 });
 
 test("a_well_formed_block_parses_to_a_screen_context_that_renders_back_to_the_same_text", () => {

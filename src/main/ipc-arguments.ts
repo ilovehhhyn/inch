@@ -31,6 +31,12 @@ export function requireSavedDiffFolder(folder: string, saved: string | null): st
   return folder;
 }
 
+/** A saved layout may name only the folder it already holds or one the folder dialog returned, so the window cannot save a folder of its own choosing and then read its diff. */
+export function requireChosenDiffFolder(folder: string | null, saved: string | null, chosen: ReadonlySet<string>): string | null {
+  if (folder === null || folder === saved || chosen.has(folder)) return folder;
+  throw new Error(`diff folder ${folder} was not chosen with the folder dialog; choose it with the folder button`);
+}
+
 /** Accepts exactly `{ model, reasoning }` with two non-empty strings; whether the provider offers them is checked by the provider. */
 export function parseModelChoice(value: unknown): ModelChoice {
   const fix = "choice must be { model, reasoning } with two non-empty strings; the window sends the pickers' values";
