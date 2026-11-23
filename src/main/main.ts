@@ -4,6 +4,8 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { buildAntEnvironment, createAntCli, nodeAntExec, type AntCli } from "../claude/ant-cli";
+import { createClaudeProvider } from "../claude/claude-provider";
+import { createClaudeThreadStore } from "../claude/claude-thread-store";
 import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
 import type { ChatProvider } from "../shared/chat-provider";
@@ -75,7 +77,8 @@ const codex = createSupervisedCodexProvider(async () => {
   return (await starting).supervisor.ready();
 });
 
-const providers: Readonly<Partial<Record<ProviderId, ChatProvider>>> = { codex: codex.provider };
+/** The providers in use; Claude is added once the app is ready, because its key store needs Electron's safeStorage. */
+const providers: Partial<Record<ProviderId, ChatProvider>> = { codex: codex.provider };
 
 let claude: ClaudeServices | undefined;
 
@@ -143,7 +146,7 @@ async function startCodex(): Promise<StartedCodex> {
 function registerHandlers(started: Promise<StartedCodex>): void {
   /** The running Codex client; a request made during a restart waits for it instead of failing. */
   const readyClient = async () => (await started).supervisor.ready();
-  codex.provider.onEvent(sendProviderEvent);
+  for (const provider of Object.values(providers)) provider.onEvent(sendProviderEvent);
   registerIpc({
     startupStatus: async (): Promise<StartupStatus> => {
       try {
@@ -153,7 +156,7 @@ function registerHandlers(started: Promise<StartedCodex>): void {
         throw error;
       }
     },
-    accountRead: (provider) => (provider === "claude" ? requireClaude().readAccount() : providerFor(provider).readAccount()),
+    accountRead: (provider) => providerFor(provider).readAccount(),
     authStart: async (kind) => (await readyClient()).startLogin(kind),
     authApiKey: async (apiKey) => (await readyClient()).startApiKeyLogin(apiKey),
     authCancel: async (loginId) => (await readyClient()).cancelLogin(loginId),
@@ -187,6 +190,11 @@ void app.whenReady().then(() => {
     clock: Date.now,
     clientOptions: claudeBaseUrl === undefined ? {} : { baseURL: claudeBaseUrl },
     log,
+  });
+  providers.claude = createClaudeProvider({
+    credentials: claude.credentials,
+    store: createClaudeThreadStore(join(app.getPath("userData"), "claude-threads")),
+    clientOptions: claude.clientOptions,
   });
   const started = startCodex();
   starting = started;

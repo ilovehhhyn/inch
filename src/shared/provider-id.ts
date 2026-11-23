@@ -4,6 +4,9 @@ export const PROVIDER_IDS = ["codex", "claude"] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
+/** What the window calls each provider. */
+export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = { codex: "OpenAI", claude: "Claude" };
+
 /** Parses an untrusted value into a ProviderId; an unknown one is an error that names the accepted ids. */
 export function parseProviderId(value: unknown): ProviderId {
   const found = PROVIDER_IDS.find((id) => id === value);

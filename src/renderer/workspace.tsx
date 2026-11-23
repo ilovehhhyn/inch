@@ -23,12 +23,13 @@ export type WorkspaceProps = Readonly<{
   draft: string;
   onDraftChange: (draft: string) => void;
   onManageAccounts: () => void;
+  /** The providers that are signed in, in the order the window lists them; never empty. */
+  providers: ReadonlyArray<ProviderId>;
+  /** A provider reported that its account changed, such as an expired Claude sign-in; the window reads the accounts again. */
+  onAccountChanged: () => void;
 }>;
 
 const NEW_CHAT_TITLE = "New chat";
-
-/** A new chat starts on this provider; the sidebar offers a choice once Claude can sign in. */
-const NEW_CHAT_PROVIDER: ProviderId = "codex";
 
 function monotonicClock(): number {
   return performance.now();
@@ -38,7 +39,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function Workspace({ api, draft, onDraftChange, onManageAccounts }: WorkspaceProps): ReactElement {
+export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
   const recorder = useMemo(() => new LatencyRecorder({ sink: (record) => api.metricsAppend(record), now: monotonicClock, wallClock: () => new Date() }), [api]);
@@ -46,6 +47,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts }: Works
   const [layout, setLayout] = useState<Layout | null>(null);
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [chosenProvider, setChosenProvider] = useState<ProviderId | null>(null);
   const openingSideChats = useRef(new Set<ThreadId>());
   /** The provider of every chat the window knows: chats belong to one provider for good, and side chats use their parent's. */
   const threadProviders = useRef(new Map<ThreadId, ProviderId>());
@@ -62,6 +64,10 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts }: Works
     [store],
   );
   const sender = useSender(api, store, tracker, recorder, report);
+  const firstProvider = providers[0];
+  if (firstProvider === undefined) throw new Error("no provider is signed in; the window shows the sign-in page then");
+  /** A chosen provider that has since signed out gives way to the first one that is still signed in. */
+  const newChatProvider = chosenProvider !== null && providers.includes(chosenProvider) ? chosenProvider : firstProvider;
 
   const applyLayout = useCallback((next: Layout): void => {
     latestLayout.current = next;
@@ -88,11 +94,12 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts }: Works
     refreshThreads();
     api.layoutRead().then(applyLayout, (error: unknown) => setProblem(`Could not read the saved layout: ${messageOf(error)}`));
     return api.onProviderEvent((event) => {
+      if (event.type === "accountChanged") onAccountChanged();
       recorder.observe(event);
       store.apply(event);
       if (event.type === "completed") refreshThreads();
     });
-  }, [api, store, recorder, refreshThreads, applyLayout]);
+  }, [api, store, recorder, refreshThreads, applyLayout, onAccountChanged]);
 
   const mainTurnIds = useMemo(() => new Set(mainView.messages.map((message) => message.turnId)), [mainView.messages]);
   const visibleSideChats = useMemo(() => (layout?.sideChats ?? []).filter((chat) => mainTurnIds.has(chat.forkedFromTurn)), [layout, mainTurnIds]);
@@ -167,7 +174,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts }: Works
   async function sendIn(threadId: ThreadId | null, question: string, mode: SendMode): Promise<boolean> {
     let provider: ProviderId;
     try {
-      provider = threadId === null ? NEW_CHAT_PROVIDER : providerOfThread(threadId);
+      provider = threadId === null ? newChatProvider : providerOfThread(threadId);
     } catch (error) {
       report(threadId, error);
       return false;
@@ -185,6 +192,9 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts }: Works
       <Sidebar
         threads={threads}
         onManageAccounts={onManageAccounts}
+        providers={providers}
+        newChatProvider={newChatProvider}
+        onNewChatProviderChange={setChosenProvider}
         selectedId={mainThread}
         onSelect={select}
         onNewChat={() => {

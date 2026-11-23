@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import type { ProviderAccount } from "../shared/chat-provider";
 import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
-import type { ProviderId } from "../shared/provider-id";
+import { PROVIDER_IDS, type ProviderId } from "../shared/provider-id";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
 import { Workspace } from "./workspace";
@@ -53,5 +53,6 @@ export function App({ api }: AppProps): ReactElement | null {
   if (!isSignedInAnywhere || isManagingAccounts) {
     return <SignIn api={api} accounts={accounts} onAccountsChanged={readAccounts} {...(isSignedInAnywhere ? { onClose: () => setManagingAccounts(false) } : {})} />;
   }
-  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} />;
+  const providers = PROVIDER_IDS.filter((id) => accounts[id].signedIn);
+  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} providers={providers} onAccountChanged={readAccounts} />;
 }

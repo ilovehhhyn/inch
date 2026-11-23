@@ -58,7 +58,7 @@ export type MarginApi = Readonly<{
   threadStart(provider: ProviderId): Promise<ThreadId>;
   /** Opens a stored thread of `provider` and returns its messages. */
   threadOpen(provider: ProviderId, threadId: ThreadId): Promise<ReadonlyArray<DisplayMessage>>;
-  /** The chats of every provider that is signed in, newest first, each tagged with its provider. */
+  /** The stored chats of every provider, newest first, each tagged with its provider. */
   threadList(): Promise<ReadonlyArray<ThreadSummary>>;
   /** Forks `threadId` through `lastTurnId` into a new thread of the same provider. */
   threadFork(provider: ProviderId, threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId>;
