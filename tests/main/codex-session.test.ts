@@ -57,3 +57,21 @@ test("an_initialize_error_response_stops_the_child_and_is_codex_crashed", async 
   expect((error as StartupError).info.message).toContain("bad request");
   expect(fake.child.signals).toEqual(["SIGTERM"]);
 });
+
+test("a_started_session_declines_an_approval_request_on_the_wire_and_logs_it", async () => {
+  const fake = new FakeAppServer();
+  fake.respond("initialize", INIT_RESULT);
+  fake.ignore("initialized");
+  fake.respond("config/read", { config: {} });
+  const logLines: Array<string> = [];
+  await startCodexSession({ ...options(fake), log: (line) => void logLines.push(line) });
+
+  fake.sendRequest({ method: "item/commandExecution/requestApproval", id: 41, params: { threadId: "t1", turnId: "u1", itemId: "i1" } } as never); // the fixture sets only the fields the answer reads
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  const replies = fake.received().filter((message) => message.id === 41);
+  expect(replies).toHaveLength(1);
+  expect(replies[0]?.params).toEqual({ decision: "decline" });
+  expect(logLines).toContain("declined item/commandExecution/requestApproval thread=t1");
+});
