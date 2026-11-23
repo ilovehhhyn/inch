@@ -14,6 +14,7 @@ import type { InitializeResponse } from "./generated/InitializeResponse";
 import { buildMcpDisableConfig } from "./mcp-overrides";
 import type { Thread } from "./generated/v2/Thread";
 import type { ThreadListResponse } from "./generated/v2/ThreadListResponse";
+import type { ModelListResponse } from "./generated/v2/ModelListResponse";
 import type { Model } from "./generated/v2/Model";
 import type { UserInput } from "./generated/v2/UserInput";
 import type { ModelOption } from "../shared/models";
@@ -137,6 +138,8 @@ export class CodexClient {
   private readonly faultHandlers = new Set<(info: StartupErrorInfo) => void>();
   private readonly models = new Map<ThreadId, string>();
   private readonly forkParents = new Map<string, string | null>();
+  /** The one `model/list` answer of this app-server session; dropped when the account changes or a request fails. */
+  private modelListCache: Promise<ModelListResponse> | null = null;
 
   constructor(options: CodexClientOptions) {
     this.connection = options.connection;
@@ -163,6 +166,7 @@ export class CodexClient {
   }
 
   private trackTurns(notification: ServerNotification): void {
+    if (notification.method === "account/updated" || notification.method === "account/login/completed") this.modelListCache = null;
     if (notification.method === "turn/started") this.turns.set(asTurnId(notification.params.turn.id), asThreadId(notification.params.threadId));
     if (notification.method === "turn/completed") this.turns.delete(asTurnId(notification.params.turn.id));
   }
@@ -185,9 +189,21 @@ export class CodexClient {
     return this.threadDefaultsValue;
   }
 
+  /** The session's `model/list` answer, requested once; a restarted app-server has a new client and so a new answer. */
+  private modelList(): Promise<ModelListResponse> {
+    if (this.modelListCache === null) {
+      const request = this.connection.request("model/list", {});
+      this.modelListCache = request;
+      request.catch(() => {
+        if (this.modelListCache === request) this.modelListCache = null; // a failed request is asked again next time
+      });
+    }
+    return this.modelListCache;
+  }
+
   /** Returns the id of the model `model/list` marks as default; a thread must always name its model. */
   async defaultModelId(): Promise<string> {
-    const { data } = await this.connection.request("model/list", {});
+    const { data } = await this.modelList();
     const found = data.find((model) => model.isDefault);
     if (found === undefined) throw new Error("model/list marks no default model; choose a model explicitly or sign in to an account that has one");
     return found.id;
@@ -195,7 +211,7 @@ export class CodexClient {
 
   /** The models the account can use, the default first; hidden models are left out. */
   async listModels(): Promise<Array<ModelOption>> {
-    const { data } = await this.connection.request("model/list", {});
+    const { data } = await this.modelList();
     return data
       .filter((model) => !model.hidden)
       .sort((left, right) => Number(right.isDefault) - Number(left.isDefault))

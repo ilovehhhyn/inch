@@ -114,6 +114,41 @@ test("the_default_model_is_the_one_model_list_marks_default", async () => {
   expect(await client.defaultModelId()).toBe("gpt-5.6-sol");
 });
 
+const TWO_MODELS = { data: [{ id: "gpt-5.6-terra", isDefault: false, hidden: false }, { id: "gpt-5.6-sol", isDefault: true, hidden: false }], nextCursor: null };
+
+test("one_session_asks_model_list_once_however_many_times_the_default_or_the_list_is_read", async () => {
+  const { fake, client, sent } = await setup();
+  fake.respond("model/list", TWO_MODELS);
+
+  await client.defaultModelId();
+  await client.defaultModelId();
+  await Promise.all([client.defaultModelId(), client.defaultModelId()]);
+
+  expect(sent().map((message) => message.method)).toEqual(["model/list"]);
+});
+
+test("a_failed_model_list_is_not_cached_so_the_next_read_asks_again", async () => {
+  const { fake, client, sent } = await setup();
+  fake.respondError("model/list", -32000, "not signed in");
+  await expect(client.defaultModelId()).rejects.toThrow("not signed in");
+  fake.respond("model/list", TWO_MODELS);
+
+  expect(await client.defaultModelId()).toBe("gpt-5.6-sol");
+
+  expect(sent().map((message) => message.method)).toEqual(["model/list", "model/list"]);
+});
+
+test("an_account_change_drops_the_cached_model_list", async () => {
+  const { fake, client, sent } = await setup();
+  fake.respond("model/list", TWO_MODELS);
+  await client.defaultModelId();
+
+  fake.emit({ method: "account/updated", params: { authMode: "apikey", planType: null } });
+  await client.defaultModelId();
+
+  expect(sent().map((message) => message.method)).toEqual(["model/list", "model/list"]);
+});
+
 test("no_default_model_is_a_hard_error_naming_the_fix", async () => {
   const { fake, client } = await setup();
   fake.respond("model/list", { data: [{ id: "gpt-5.6-terra", isDefault: false }], nextCursor: null });
