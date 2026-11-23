@@ -10,9 +10,11 @@ export type SidebarProps = Readonly<{
   onSelect: (threadId: ThreadId) => void;
   onNewChat: () => void;
   onManageAccounts: () => void;
+  /** The setting that reads the answer to every spoken question aloud. */
+  readAloud: Readonly<{ isOn: boolean; onChange: (isOn: boolean) => void }>;
 }>;
 
-export function Sidebar({ threads, selectedId, onSelect, onNewChat, onManageAccounts }: SidebarProps): ReactElement {
+export function Sidebar({ threads, selectedId, onSelect, onNewChat, onManageAccounts, readAloud }: SidebarProps): ReactElement {
   return (
     <nav className="sidebar" aria-label="Chats">
       <button type="button" className="side-item" onClick={onNewChat}>
@@ -23,6 +25,10 @@ export function Sidebar({ threads, selectedId, onSelect, onNewChat, onManageAcco
           {thread.title}
         </button>
       ))}
+      <label className="read-aloud-setting">
+        <input type="checkbox" checked={readAloud.isOn} onChange={(event) => readAloud.onChange(event.target.checked)} />
+        Read spoken answers aloud
+      </label>
       <button type="button" className="side-item" onClick={onManageAccounts}>
         Accounts
       </button>

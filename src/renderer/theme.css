@@ -467,3 +467,19 @@ code {
 .u .chips {
   margin-bottom: 6px;
 }
+
+.speaker-button {
+  all: unset;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--sidebar-item-text);
+  margin-right: 12px;
+}
+.read-aloud-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--sidebar-item-text);
+}

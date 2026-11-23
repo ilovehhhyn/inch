@@ -6,11 +6,14 @@ import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
 import { PROVIDER_IDS, type ProviderId } from "../shared/provider-id";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
+import { createBrowserSpeechEngine, createReadAloudSetting } from "./voice/read-aloud";
 import { startWavRecording } from "./voice/wav-recorder";
 import { Workspace, type VoiceEnvironment } from "./workspace";
 
 /** The voice parts of the window; the default records the microphone, and tests pass a fake recorder. */
-const DEFAULT_VOICE: VoiceEnvironment = { startRecording: startWavRecording };
+function createBrowserVoice(): VoiceEnvironment {
+  return { startRecording: startWavRecording, speech: createBrowserSpeechEngine(), readAloudSetting: createReadAloudSetting(window.localStorage) };
+}
 
 export type AppProps = Readonly<{ api: MarginApi; voice?: VoiceEnvironment }>;
 
@@ -24,11 +27,12 @@ function crashStatus(error: unknown): StartupStatus {
   return { ok: false, error: { kind: "codex-crashed", message: `Margin could not check Codex: ${messageOf(error)}`, fix: "Restart Margin" } };
 }
 
-export function App({ api, voice = DEFAULT_VOICE }: AppProps): ReactElement | null {
+export function App({ api, voice: injectedVoice }: AppProps): ReactElement | null {
   const [status, setStatus] = useState<StartupStatus | null>(null);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
   const [isManagingAccounts, setManagingAccounts] = useState(false);
   const [draft, setDraft] = useState("");
+  const [voice] = useState<VoiceEnvironment>(() => injectedVoice ?? createBrowserVoice());
 
   useEffect(() => {
     api.startupStatus().then(setStatus, (error: unknown) => setStatus(crashStatus(error)));

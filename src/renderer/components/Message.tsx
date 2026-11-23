@@ -1,9 +1,10 @@
 // Draws one message: the user's text as a bubble, the assistant's answer as markdown with no logo and no name.
-import type { ReactElement, ReactNode } from "react";
+import { useContext, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 
 import type { TurnId } from "../../shared/provider-events";
 import type { DisplayMessage } from "../state/thread-reducer";
+import { AnswerReaderContext } from "../voice/read-aloud-context";
 import { AttachmentChips } from "./AttachmentChips";
 
 export type MessageProps = Readonly<{
@@ -33,6 +34,7 @@ function markdownComponents(label: string): Components {
 }
 
 export function Message({ message, position, onOpenSideChat }: MessageProps): ReactElement {
+  const reader = useContext(AnswerReaderContext);
   const label = `message ${position} (${message.role})`;
   if (message.role === "user") {
     return (
@@ -47,6 +49,11 @@ export function Message({ message, position, onOpenSideChat }: MessageProps): Re
     <article className="a" data-context-scope="">
       {message.status === "streaming" && message.text === "" ? <span className="pending" role="status" aria-label="Thinking" /> : null}
       <ReactMarkdown components={markdownComponents(label)}>{message.text}</ReactMarkdown>
+      {reader === null || message.status !== "done" || message.text === "" ? null : (
+        <button type="button" className="speaker-button" onClick={() => reader.toggle(message.id, message.text)}>
+          {reader.speakingId === message.id ? "Stop reading" : "Read answer aloud"}
+        </button>
+      )}
       {canOpenSideChat ? (
         <button type="button" className="side-chat-button" onClick={() => onOpenSideChat(message.turnId)}>
           Open side chat

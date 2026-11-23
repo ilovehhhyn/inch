@@ -5,7 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { App } from "../../src/renderer/app";
-import { MICROPHONE_DENIED_MESSAGE, type Recording } from "../../src/renderer/voice/push-to-talk";
+import { MICROPHONE_DENIED_MESSAGE } from "../../src/renderer/voice/push-to-talk";
+import type { VoiceEnvironment } from "../../src/renderer/workspace";
 import { renderContextBlock } from "../../src/shared/context-format";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 import type { DisplayMessage } from "../../src/shared/thread-history";
@@ -30,11 +31,13 @@ function threeExchanges(): Array<DisplayMessage> {
 
 type Fake = Readonly<{ started: { count: number }; recording: { stopped: boolean; cancelled: boolean } }>;
 
-function fakeVoice(): Readonly<{ voice: { startRecording: () => Promise<Recording> }; fake: Fake }> {
+function fakeVoice(): Readonly<{ voice: VoiceEnvironment; fake: Fake }> {
   const fake: Fake = { started: { count: 0 }, recording: { stopped: false, cancelled: false } };
   return {
     fake,
     voice: {
+      speech: { speak: () => undefined, stop: () => undefined },
+      readAloudSetting: { read: () => false, write: () => undefined },
       startRecording: async () => {
         fake.started.count += 1;
         return {
@@ -51,7 +54,7 @@ function fakeVoice(): Readonly<{ voice: { startRecording: () => Promise<Recordin
   };
 }
 
-async function openOldChat(api: FakeMarginApi, voice: { startRecording: () => Promise<Recording> }): Promise<HTMLElement> {
+async function openOldChat(api: FakeMarginApi, voice: VoiceEnvironment): Promise<HTMLElement> {
   api.threads = [{ id: OLD, provider: "codex", title: "Fine-tuning plan", updatedAtSec: 5 }];
   api.histories.set(OLD, threeExchanges());
   render(<App api={api} voice={voice} />);

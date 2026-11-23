@@ -21,10 +21,12 @@ import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
 import { useAttachments } from "./state/use-attachments";
 import { captureForSpeech, useSender } from "./state/use-sender";
+import { AnswerReaderContext } from "./voice/read-aloud-context";
+import { createReadAloud, shouldReadAnswer, type ReadAloudSetting, type SpeechEngine } from "./voice/read-aloud";
 import { createPushToTalk, PUSH_TO_TALK_KEY, type Recording, type VoiceStatus } from "./voice/push-to-talk";
 
 /** The parts of voice that need the browser microphone; tests replace them, the app uses `startWavRecording`. */
-export type VoiceEnvironment = Readonly<{ startRecording: () => Promise<Recording> }>;
+export type VoiceEnvironment = Readonly<{ startRecording: () => Promise<Recording>; speech: SpeechEngine; readAloudSetting: ReadAloudSetting }>;
 
 const LISTENING_TEXT = `Listening… release ${PUSH_TO_TALK_KEY.label} to send`;
 
@@ -61,6 +63,14 @@ function pickerProps(pickers: ComposerPickers | undefined): { pickers?: Composer
   return pickers === undefined ? {} : { pickers };
 }
 
+function readSetting(setting: ReadAloudSetting): Readonly<{ isOn: boolean; error: string | null }> {
+  try {
+    return { isOn: setting.read(), error: null };
+  } catch (error) {
+    return { isOn: false, error: messageOf(error) };
+  }
+}
+
 export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged, voice }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
@@ -68,7 +78,9 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   const [threads, setThreads] = useState<ReadonlyArray<ThreadSummary>>([]);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  /** The saved read-aloud setting, read once; one that cannot be read is off, and the window says why. */
+  const [initialSetting] = useState(() => readSetting(voice.readAloudSetting));
+  const [problem, setProblem] = useState<string | null>(initialSetting.error);
   const [chosenProvider, setChosenProvider] = useState<ProviderId | null>(null);
   const [models, setModels] = useState<ReadonlyMap<ProviderId, ReadonlyArray<ModelOption>>>(new Map());
   /** The last choice of every chat the window knows, read from the chat's saved choice or set by the pickers. */
@@ -85,6 +97,17 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const mainView = useSyncExternalStore(store.subscribe, () => (mainThread === null ? EMPTY_THREAD : store.view(mainThread)));
 
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [readAloudOn, setReadAloudOn] = useState(initialSetting.isOn);
+  const readAloud = useMemo(() => createReadAloud(voice.speech, setSpeakingId, setProblem), [voice.speech]);
+  /** Turns whose question was spoken and whose answer has not finished; the setting decides whether that answer is read. */
+  const spokenTurns = useRef(new Set<TurnId>());
+  const readAloudOnNow = useRef(false);
+  useLayoutEffect(() => {
+    readAloudOnNow.current = readAloudOn;
+  }, [readAloudOn]);
+  useEffect(() => readAloud.attachEscape(window), [readAloud]);
+  useEffect(() => () => readAloud.stop(), [readAloud]);
   const report = useCallback(
     (threadId: ThreadId | null, error: unknown): void => {
       if (threadId === null) setProblem(messageOf(error));
@@ -141,9 +164,17 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
       if (event.type === "accountChanged") onAccountChanged();
       recorder.observe(event);
       store.apply(event);
-      if (event.type === "completed") refreshThreads();
+      if (event.type === "completed") {
+        refreshThreads();
+        const wasSpoken = spokenTurns.current.delete(event.turnId);
+        if (event.status === "completed" && shouldReadAnswer({ readAloudOn: readAloudOnNow.current, wasSpoken })) {
+          const answerId = `${event.turnId}:assistant`;
+          const text = store.view(event.threadId).messages.find((message) => message.id === answerId)?.text ?? "";
+          readAloud.toggle(answerId, text);
+        }
+      }
     });
-  }, [api, store, recorder, refreshThreads, applyLayout, onAccountChanged]);
+  }, [api, store, recorder, refreshThreads, applyLayout, onAccountChanged, readAloud]);
 
   const mainTurnIds = useMemo(() => new Set(mainView.messages.map((message) => message.turnId)), [mainView.messages]);
   const visibleSideChats = useMemo(() => (layout?.sideChats ?? []).filter((chat) => mainTurnIds.has(chat.forkedFromTurn)), [layout, mainTurnIds]);
@@ -302,7 +333,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   useLayoutEffect(() => {
     speechTargets.current = {
       send: async (text, capture) => {
-        const wasSent = await sendIn(mainThread, text, "withContext", mainAttachments.chips, capture);
+        const wasSent = await sendIn(mainThread, text, "withContext", mainAttachments.chips, capture, (turnId) => spokenTurns.current.add(turnId));
         if (wasSent) mainAttachments.clear();
         return wasSent;
       },
@@ -344,10 +375,22 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   const mainTitle = threads.find((thread) => thread.id === mainThread)?.title ?? NEW_CHAT_TITLE;
 
   return (
+    <AnswerReaderContext value={{ speakingId, toggle: readAloud.toggle }}>
     <main className="app" aria-label="Margin">
       <Sidebar
         threads={threads}
         onManageAccounts={onManageAccounts}
+        readAloud={{
+          isOn: readAloudOn,
+          onChange: (isOn) => {
+            try {
+              voice.readAloudSetting.write(isOn);
+              setReadAloudOn(isOn);
+            } catch (error) {
+              setProblem(`Could not save the read-aloud setting: ${messageOf(error)}`);
+            }
+          },
+        }}
         selectedId={mainThread}
         onSelect={select}
         onNewChat={() => {
@@ -399,5 +442,6 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
         </div>
       </aside>
     </main>
+    </AnswerReaderContext>
   );
 }
