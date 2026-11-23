@@ -63,8 +63,8 @@ export function ChatPane({ paneId, threadId, store, onOpenSideChat, children, re
         }}
       >
         <div className="thread">
-          {view.messages.map((message) => (
-            <Message key={message.id} message={message} {...(onOpenSideChat === undefined ? {} : { onOpenSideChat })} />
+          {view.messages.map((message, index) => (
+            <Message key={message.id} message={message} position={index + 1} {...(onOpenSideChat === undefined ? {} : { onOpenSideChat })} />
           ))}
           {view.error === null ? null : <p className="thread-error" role="alert">{view.error}</p>}
         </div>

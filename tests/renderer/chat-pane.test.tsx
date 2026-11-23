@@ -98,3 +98,27 @@ test("a_failed_turn_shows_its_error_as_an_alert", () => {
 
   expect(screen.getByRole("alert")).toHaveTextContent("Codex stopped unexpectedly. Retry");
 });
+
+const MARKED_ANSWER = "## 3. Learning-rate schedule\n\nWarm up for 500 steps.\n\n- first item\n- second item\n\n```python\nlr = 0.1\n```";
+
+test("paragraphs_list_items_code_blocks_and_headings_are_labelled_context_blocks", () => {
+  const { container } = render(<ChatPane paneId={PANE} threadId={THREAD} store={storeWith(MARKED_ANSWER)} />);
+
+  const blocks = [...container.querySelectorAll("[data-context-block]")].map((element) => [element.tagName, element.getAttribute("data-context-label"), element.hasAttribute("data-context-heading")]);
+
+  expect(blocks).toEqual([
+    ["DIV", "message 1 (user)", false],
+    ["H2", "message 2 (assistant)", true],
+    ["P", "message 2 (assistant)", false],
+    ["LI", "message 2 (assistant)", false],
+    ["LI", "message 2 (assistant)", false],
+    ["PRE", "message 2 (assistant)", false],
+  ]);
+  expect(container.querySelector("article")?.hasAttribute("data-context-scope")).toBe(true);
+});
+
+test("the_open_side_chat_button_is_not_part_of_any_context_block", () => {
+  const { container } = render(<ChatPane paneId={PANE} threadId={THREAD} store={storeWith("a")} onOpenSideChat={() => undefined} />);
+
+  expect(container.querySelector("button")?.closest("[data-context-block]")).toBeNull();
+});
