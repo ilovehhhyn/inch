@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // Invariant: an answer is spoken without its code, only on request or for a spoken question when the setting is on, and Escape stops the speech at once.
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import {
+  createBrowserSpeechEngine,
   createReadAloud,
   createReadAloudSetting,
   READ_ANSWERS_ALOUD_DEFAULT,
@@ -195,4 +196,61 @@ test("a_stored_value_other_than_on_or_off_is_an_error_naming_the_fix", () => {
   const { storage } = memoryStorage("maybe");
 
   expect(() => createReadAloudSetting(storage).read()).toThrow("the saved read-aloud setting is `maybe`; it must be on or off, so switch the setting again to repair it");
+});
+
+class FakeUtterance extends EventTarget {
+  readonly text: string;
+  constructor(text: string) {
+    super();
+    this.text = text;
+  }
+}
+
+function installSynthesis(): Readonly<{ spoken: Array<FakeUtterance>; cancels: { count: number } }> {
+  const spoken: Array<FakeUtterance> = [];
+  const cancels = { count: 0 };
+  vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+  vi.stubGlobal("speechSynthesis", { speak: (utterance: FakeUtterance) => spoken.push(utterance), cancel: () => void (cancels.count += 1) });
+  return { spoken, cancels };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+test("the_engine_keeps_the_utterance_it_is_speaking_until_it_ends", () => {
+  const { spoken } = installSynthesis();
+  const engine = createBrowserSpeechEngine();
+  expect(engine.activeUtterance()).toBeNull();
+
+  engine.speak("One.", { onEnd: () => undefined, onError: () => undefined });
+
+  expect(engine.activeUtterance()).toBe(spoken[0]);
+  spoken[0]?.dispatchEvent(new Event("end"));
+  expect(engine.activeUtterance()).toBeNull();
+});
+
+test("the_engine_lets_go_of_the_utterance_on_an_error_and_on_stop", () => {
+  const { spoken } = installSynthesis();
+  const engine = createBrowserSpeechEngine();
+  const errors: Array<string> = [];
+  engine.speak("One.", { onEnd: () => undefined, onError: (message) => errors.push(message) });
+  const failure = Object.assign(new Event("error"), { error: "synthesis-failed" });
+
+  spoken[0]?.dispatchEvent(failure);
+  expect(engine.activeUtterance()).toBeNull();
+  expect(errors).toEqual(["synthesis-failed"]);
+
+  engine.speak("Two.", { onEnd: () => undefined, onError: () => undefined });
+  engine.stop();
+  expect(engine.activeUtterance()).toBeNull();
+});
+
+test("an_end_event_of_an_older_utterance_does_not_release_the_newer_one", () => {
+  const { spoken } = installSynthesis();
+  const engine = createBrowserSpeechEngine();
+  engine.speak("One.", { onEnd: () => undefined, onError: () => undefined });
+  engine.speak("Two.", { onEnd: () => undefined, onError: () => undefined });
+
+  spoken[0]?.dispatchEvent(new Event("end"));
+
+  expect(engine.activeUtterance()).toBe(spoken[1]);
 });

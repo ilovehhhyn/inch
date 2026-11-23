@@ -77,6 +77,12 @@ test("an_image_for_a_text_only_model_is_refused_before_anything_is_sent", async 
   await expect(page.getByRole("alert")).toContainText("cannot send image `pixel.png` to `fake-text-model`, which reads text only");
   expect(await readTurns(codexLogPath)).toEqual([]);
   await expect(page.getByRole("list", { name: "Attached files" })).toContainText("pixel.png");
+
+  await page.getByRole("button", { name: "Remove pixel.png" }).click();
+
+  await expect(page.locator(".composer .chips")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toBeVisible();
+  expect((await readdir(join(margin.userDataPath, "attachments"), { recursive: true })).filter((entry) => entry.endsWith("pixel.png"))).toEqual([]);
 });
 
 test("a_zip_file_is_refused_with_the_accepted_kinds_and_nothing_is_stored", async () => {

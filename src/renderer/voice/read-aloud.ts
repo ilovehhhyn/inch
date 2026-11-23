@@ -142,8 +142,15 @@ export function createReadAloud(engine: SpeechEngine, onChange: (speakingId: str
   };
 }
 
-/** The system voices through `speechSynthesis`; a window without it fails when something is spoken, not when the window opens. */
-export function createBrowserSpeechEngine(): SpeechEngine {
+export type BrowserSpeechEngine = SpeechEngine & Readonly<{ activeUtterance: () => SpeechSynthesisUtterance | null }>;
+
+/**
+ * The system voices through `speechSynthesis`; a window without it fails when something is spoken, not when the window opens.
+ * The utterance being spoken is kept in `active` until it ends, fails or is stopped: Chromium can collect an utterance that
+ * nothing references and then never fire `end`, which would stop the queue after the first paragraph.
+ */
+export function createBrowserSpeechEngine(): BrowserSpeechEngine {
+  let active: SpeechSynthesisUtterance | null = null;
   const synthesis = (): SpeechSynthesis => {
     if (typeof speechSynthesis === "undefined") throw new Error("speech synthesis is not available in this window");
     return speechSynthesis;
@@ -151,11 +158,25 @@ export function createBrowserSpeechEngine(): SpeechEngine {
   return {
     speak(text, handlers) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.addEventListener("end", () => handlers.onEnd());
-      utterance.addEventListener("error", (event) => handlers.onError(event.error));
+      const release = (): void => {
+        if (active === utterance) active = null;
+      };
+      utterance.addEventListener("end", () => {
+        release();
+        handlers.onEnd();
+      });
+      utterance.addEventListener("error", (event) => {
+        release();
+        handlers.onError(event.error);
+      });
+      active = utterance;
       synthesis().speak(utterance);
     },
-    stop: () => synthesis().cancel(),
+    stop() {
+      active = null;
+      synthesis().cancel();
+    },
+    activeUtterance: () => active,
   };
 }
 
