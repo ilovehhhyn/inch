@@ -30,7 +30,7 @@ export class ThreadStore {
   }
 
   load(threadId: ThreadId, history: ReadonlyArray<DisplayMessage>): void {
-    const messages = history.map((message) => ({ id: `${message.turnId}:${message.role}`, turnId: message.turnId, role: message.role, text: message.text, status: message.status, ...(message.attachments === undefined ? {} : { attachments: message.attachments }) }));
+    const messages = history.map((message) => ({ id: `${message.turnId}:${message.role}`, turnId: message.turnId, role: message.role, text: message.text, status: message.status, ...(message.attachments === undefined ? {} : { attachments: message.attachments }), ...(message.servedBy === undefined ? {} : { servedBy: message.servedBy }) }));
     this.views.set(threadId, { messages, activeTurn: null, error: null });
     this.loaded.add(threadId);
     this.notify();

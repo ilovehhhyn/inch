@@ -49,6 +49,7 @@ export function Message({ message, position, onOpenSideChat }: MessageProps): Re
     <article className="a" data-context-scope="">
       {message.status === "streaming" && message.text === "" ? <span className="pending" role="status" aria-label="Thinking" /> : null}
       <ReactMarkdown components={markdownComponents(label)}>{message.text}</ReactMarkdown>
+      {message.servedBy === undefined ? null : <p className="served-by">Answered by {message.servedBy}</p>}
       {reader === null || message.status !== "done" || message.text === "" ? null : (
         <button type="button" className="speaker-button" onClick={() => reader.toggle(message.id, message.text)}>
           {reader.speakingId === message.id ? "Stop reading" : "Read answer aloud"}

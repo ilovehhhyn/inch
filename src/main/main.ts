@@ -22,6 +22,7 @@ import { runGitDiff } from "./git-diff";
 import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
+import { lazyUntilItFails } from "./lazy-resolver";
 import { clearStagedAttachments, createAttachmentContent, createAttachmentStore } from "./attachments";
 import { createChoiceStore } from "./choice-store";
 import { readAssumedMicrophoneAccess } from "./microphone-access";
@@ -96,22 +97,14 @@ function requireClaude(): ClaudeServices {
   return claude;
 }
 
-/** `ant` is found through the login-shell PATH, which a window started from Finder does not have; it is read once, on first use. */
+/** `ant` is found through the login-shell PATH, which a window started from Finder does not have; it is read on first use, and a failed lookup is tried again next time. */
 function createLazyAnt(): () => Promise<AntCli> {
-  let pending: Promise<AntCli> | undefined;
-  return () => {
-    pending ??= nodeStartupServices.readLoginShellPath().then((path) => createAntCli({ exec: nodeAntExec, environment: buildAntEnvironment(process.env, path) }));
-    return pending;
-  };
+  return lazyUntilItFails(async () => createAntCli({ exec: nodeAntExec, environment: buildAntEnvironment(process.env, await nodeStartupServices.readLoginShellPath()) }));
 }
 
 /** `whisper-cli` is found through the login-shell PATH like `ant`; the shell is asked once. */
 function createLazyLoginShellPath(): () => Promise<string> {
-  let pending: Promise<string> | undefined;
-  return () => {
-    pending ??= nodeStartupServices.readLoginShellPath();
-    return pending;
-  };
+  return lazyUntilItFails(() => nodeStartupServices.readLoginShellPath());
 }
 
 const readLoginShellPath = createLazyLoginShellPath();
@@ -257,6 +250,7 @@ void app.whenReady().then(async () => {
     store: createClaudeThreadStore(join(app.getPath("userData"), "claude-threads")),
     clientOptions: claude.clientOptions,
     content: attachmentContent,
+    onCredentialRejected: () => claude?.markRejected(),
   });
   const started = startCodex();
   starting = started;

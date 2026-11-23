@@ -23,15 +23,16 @@ export type SideChatPaneProps = Readonly<{
   onInterrupt: (threadId: ThreadId, turnId: TurnId) => void;
   onRetry: (threadId: ThreadId) => void;
   onClose: (threadId: ThreadId) => void;
+  onSignInAgain: () => void;
   pickers?: ComposerPickers;
 }>;
 
-export function SideChatPane({ paneId, threadId, title, store, tracker, isSending, onSend, onInterrupt, onRetry, onClose, pickers, api }: SideChatPaneProps): ReactElement {
+export function SideChatPane({ paneId, threadId, title, store, tracker, isSending, onSend, onInterrupt, onRetry, onClose, onSignInAgain, pickers, api }: SideChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => store.view(threadId));
   const [draft, setDraft] = useState("");
   const attachments = useAttachments(api);
   return (
-    <ChatPane paneId={paneId} threadId={threadId} label="Side chat" title={title} store={store} tracker={tracker} onRetry={() => onRetry(threadId)}>
+    <ChatPane paneId={paneId} threadId={threadId} label="Side chat" title={title} store={store} tracker={tracker} onRetry={() => onRetry(threadId)} onSignInAgain={onSignInAgain}>
       <button type="button" className="side-chat-close" aria-label="Close side chat" onClick={() => onClose(threadId)}>
         ×
       </button>

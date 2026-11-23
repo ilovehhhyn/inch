@@ -35,13 +35,16 @@ const MISSING_KEY = "API key must not be empty; paste the key from the Anthropic
 const REJECTED_KEY = "Anthropic rejected this API key; check that you copied the whole key and that it has not been revoked";
 const UNREACHABLE = "Cannot reach Anthropic. Check the connection";
 
-/** Only the stored key and the `margin` profile are credentials; `ANTHROPIC_*` variables are not read (see `createClaudeClient`). */
-export async function readClaudeCredential(store: SecretStore, ant: AntCli, clock: () => number, previous: ClaudeCredential | null = null): Promise<ClaudeCredential | null> {
+/**
+ * Only the stored key and the `margin` profile are credentials; `ANTHROPIC_*` variables are not read (see `createClaudeClient`).
+ * `ant` is resolved only when there is no stored key and no fresh token, so a person who uses a key never depends on finding `ant`.
+ */
+export async function readClaudeCredential(store: SecretStore, resolveAnt: () => Promise<AntCli>, clock: () => number, previous: ClaudeCredential | null = null): Promise<ClaudeCredential | null> {
   const key = await store.readApiKey("claude");
   if (key !== null) return { kind: "apiKey", apiKey: key };
   if (previous?.kind === "antProfile" && clock() - previous.fetchedAtMs < ANT_TOKEN_REFRESH_MS) return previous;
   try {
-    return { kind: "antProfile", profile: "margin", accessToken: await ant.accessToken("margin"), fetchedAtMs: clock() };
+    return { kind: "antProfile", profile: "margin", accessToken: await (await resolveAnt()).accessToken("margin"), fetchedAtMs: clock() };
   } catch (error) {
     if (error instanceof AntCliError && (error.kind === "not-installed" || error.kind === "not-signed-in")) return null;
     throw error;

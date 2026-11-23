@@ -64,7 +64,7 @@ test("stored_api_key_wins_over_the_ant_profile", async () => {
   store.keys.set("claude", KEY);
   const ant = new FakeAnt();
 
-  const credential = await readClaudeCredential(store, ant, () => 0);
+  const credential = await readClaudeCredential(store, async () => ant, () => 0);
 
   expect(credential).toEqual({ kind: "apiKey", apiKey: KEY });
   expect(ant.calls).toEqual([]);
@@ -73,7 +73,7 @@ test("stored_api_key_wins_over_the_ant_profile", async () => {
 test("without_a_key_the_margin_profile_token_is_used_and_stamped_with_the_clock", async () => {
   const ant = new FakeAnt();
 
-  const credential = await readClaudeCredential(new FakeSecretStore(), ant, () => 1234);
+  const credential = await readClaudeCredential(new FakeSecretStore(), async () => ant, () => 1234);
 
   expect(credential).toEqual({ kind: "antProfile", profile: "margin", accessToken: "token-1", fetchedAtMs: 1234 });
 });
@@ -82,13 +82,13 @@ test("ant_token_is_refetched_after_five_minutes", async () => {
   const ant = new FakeAnt();
   const store = new FakeSecretStore();
   let now = 0;
-  const first = await readClaudeCredential(store, ant, () => now);
+  const first = await readClaudeCredential(store, async () => ant, () => now);
   ant.token = "token-2";
 
   now = ANT_TOKEN_REFRESH_MS - 1;
-  const reused = await readClaudeCredential(store, ant, () => now, first);
+  const reused = await readClaudeCredential(store, async () => ant, () => now, first);
   now = ANT_TOKEN_REFRESH_MS;
-  const refetched = await readClaudeCredential(store, ant, () => now, first);
+  const refetched = await readClaudeCredential(store, async () => ant, () => now, first);
 
   expect(ANT_TOKEN_REFRESH_MS).toBe(5 * 60 * 1000);
   expect(reused).toBe(first);
@@ -99,10 +99,10 @@ test("ant_token_is_refetched_after_five_minutes", async () => {
 test("a_key_saved_after_an_ant_token_was_cached_takes_over", async () => {
   const store = new FakeSecretStore();
   const ant = new FakeAnt();
-  const cached = await readClaudeCredential(store, ant, () => 0);
+  const cached = await readClaudeCredential(store, async () => ant, () => 0);
   store.keys.set("claude", KEY);
 
-  expect(await readClaudeCredential(store, ant, () => 1, cached)).toEqual({ kind: "apiKey", apiKey: KEY });
+  expect(await readClaudeCredential(store, async () => ant, () => 1, cached)).toEqual({ kind: "apiKey", apiKey: KEY });
 });
 
 test.each([
@@ -112,14 +112,14 @@ test.each([
   const ant = new FakeAnt();
   ant.token = error;
 
-  expect(await readClaudeCredential(new FakeSecretStore(), ant, () => 0)).toBeNull();
+  expect(await readClaudeCredential(new FakeSecretStore(), async () => ant, () => 0)).toBeNull();
 });
 
 test("an_ant_failure_that_is_not_a_missing_login_is_raised_not_read_as_signed_out", async () => {
   const ant = new FakeAnt();
   ant.token = new AntCliError("timeout", "`ant auth print-credentials` did not finish within 10 s; run it in a terminal to see what it is waiting for");
 
-  await expect(readClaudeCredential(new FakeSecretStore(), ant, () => 0)).rejects.toThrow("did not finish within 10 s");
+  await expect(readClaudeCredential(new FakeSecretStore(), async () => ant, () => 0)).rejects.toThrow("did not finish within 10 s");
 });
 
 type Captured = Readonly<{ url: string; headers: Headers }>;
@@ -237,7 +237,7 @@ test("api_key_never_reaches_the_renderer_or_logs", async () => {
 
   const error = await signInWithApiKey(store, KEY, failing, (line) => logs.push(line)).then(() => null, (caught: unknown) => caught);
   await signInWithApiKey(store, KEY, async () => undefined, (line) => logs.push(line));
-  const account = claudeAccountOf(await readClaudeCredential(store, new FakeAnt(), () => 0));
+  const account = claudeAccountOf(await readClaudeCredential(store, async () => new FakeAnt(), () => 0));
 
   expect((error as Error).message).not.toContain(KEY);
   expect((error as Error).message).toContain("[redacted]");
@@ -323,4 +323,45 @@ test("a_rejected_key_is_still_reported_as_an_authentication_error_by_the_model_c
   const rejecting = async (): Promise<Response> => new Response(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }), { status: 401, headers: { "content-type": "application/json" } });
 
   await expect(checkApiKey(KEY, { fetch: rejecting }, ["claude-opus-5-5"])).rejects.toBeInstanceOf(Anthropic.AuthenticationError);
+});
+
+test("a_stored_key_is_read_without_resolving_ant", async () => {
+  const store = new FakeSecretStore();
+  await store.saveApiKey("claude", KEY);
+  let lookups = 0;
+
+  const credential = await readClaudeCredential(
+    store,
+    async () => {
+      lookups += 1;
+      throw new Error("the login shell did not answer");
+    },
+    () => 0,
+  );
+
+  expect(credential).toEqual({ kind: "apiKey", apiKey: KEY });
+  expect(lookups).toBe(0);
+});
+
+test("without_a_key_a_failed_ant_lookup_is_an_error_not_a_signed_out_account", async () => {
+  await expect(
+    readClaudeCredential(
+      new FakeSecretStore(),
+      async () => {
+        throw new Error("the login shell did not answer");
+      },
+      () => 0,
+    ),
+  ).rejects.toThrow("the login shell did not answer");
+});
+
+test("a_fresh_ant_token_is_reused_without_resolving_ant_again", async () => {
+  const ant = new FakeAnt();
+  const first = await readClaudeCredential(new FakeSecretStore(), async () => ant, () => 0);
+  let lookups = 0;
+
+  const reused = await readClaudeCredential(new FakeSecretStore(), async () => ((lookups += 1), ant), () => 1, first);
+
+  expect(reused).toBe(first);
+  expect(lookups).toBe(0);
 });

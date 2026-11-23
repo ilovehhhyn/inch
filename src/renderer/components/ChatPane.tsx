@@ -1,7 +1,7 @@
 // Draws one thread in a scrolling pane and follows the newest text only while the reader is at the bottom.
 import { useCallback, useLayoutEffect, useRef, useSyncExternalStore, type ReactElement, type ReactNode, type Ref } from "react";
 
-import type { ThreadId, TurnId } from "../../shared/provider-events";
+import { CLAUDE_SIGN_IN_EXPIRED, type ThreadId, type TurnId } from "../../shared/provider-events";
 import type { PaneId } from "../context/pane-id";
 import { registerPane } from "../context/pane-registry";
 import type { ScrollTracker } from "../context/scroll-tracker";
@@ -24,6 +24,8 @@ export type ChatPaneProps = Readonly<{
   onOpenSideChat?: (turnId: TurnId) => void;
   /** Sends the failed question again; the button shows only while the pane shows a failure. */
   onRetry?: () => void;
+  /** Opens the Accounts page; the "Sign in again" button shows beside a rejected Claude sign-in. */
+  onSignInAgain?: () => void;
   /** The composer of this pane: it sits inside the pane so keyboard focus there names the pane. */
   children?: ReactNode;
   /** Receives the scroll container, which the last-scrolled tracking reads. */
@@ -41,7 +43,7 @@ function assignRef(ref: Ref<HTMLDivElement> | undefined, element: HTMLDivElement
 
 const NO_THREAD_VIEW = { messages: [], activeTurn: null, error: null } as const;
 
-export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpenSideChat, onRetry, children, ref }: ChatPaneProps): ReactElement {
+export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpenSideChat, onRetry, onSignInAgain, children, ref }: ChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => (threadId === null ? NO_THREAD_VIEW : store.view(threadId)));
   const element = useRef<HTMLDivElement | null>(null);
   const followsBottom = useRef(true);
@@ -95,6 +97,11 @@ export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpe
           {view.error === null ? null : (
             <div className="thread-error-row">
               <p className="thread-error" role="alert">{view.error}</p>
+              {onSignInAgain === undefined || view.error !== CLAUDE_SIGN_IN_EXPIRED ? null : (
+                <button type="button" className="retry-button" onClick={onSignInAgain}>
+                  Sign in again
+                </button>
+              )}
               {onRetry === undefined ? null : (
                 <button type="button" className="retry-button" onClick={onRetry}>
                   Retry

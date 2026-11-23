@@ -399,7 +399,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
         }}
       />
       <div className="main-col">
-        <ChatPane paneId={MAIN_PANE_ID} threadId={mainThread} label="Chat" title={mainTitle} store={store} tracker={tracker} onOpenSideChat={(turnId) => void openSideChat(turnId)} {...(mainThread === null ? {} : { onRetry: () => void sender.retry(mainThread) })}>
+        <ChatPane paneId={MAIN_PANE_ID} threadId={mainThread} onSignInAgain={onManageAccounts} label="Chat" title={mainTitle} store={store} tracker={tracker} onOpenSideChat={(turnId) => void openSideChat(turnId)} {...(mainThread === null ? {} : { onRetry: () => void sender.retry(mainThread) })}>
           {problem === null ? null : <p className="thread-error" role="alert">{problem}</p>}
           <Composer
             draft={draft}
@@ -437,6 +437,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
               onInterrupt={interrupt}
               onRetry={(threadId) => void sender.retry(threadId)}
               onClose={closeSideChat}
+              onSignInAgain={onManageAccounts}
             />
           ))}
         </div>

@@ -11,6 +11,8 @@ export type DisplayMessage = Readonly<{
   status: "streaming" | "done" | "failed";
   /** The files attached to a user message; absent when there were none. */
   attachments?: ReadonlyArray<AttachmentSummary>;
+  /** The model that wrote this answer when it is not the model the chat asked for; absent otherwise. */
+  servedBy?: string;
 }>;
 
 export type ThreadView = Readonly<{
@@ -55,7 +57,7 @@ export function reduceThread(view: ThreadView, event: ProviderEvent): ThreadView
     case "completed":
       if (event.turnId !== view.activeTurn) return view;
       if (event.status === "completed" || event.status === "interrupted") {
-        return { messages: updateAssistant(view, event.turnId, (message) => ({ ...message, status: "done" })), activeTurn: null, error: null };
+        return { messages: updateAssistant(view, event.turnId, (message) => ({ ...message, status: "done", ...(event.servedBy === undefined ? {} : { servedBy: event.servedBy }) })), activeTurn: null, error: null };
       }
       return {
         messages: updateAssistant(view, event.turnId, (message) => ({ ...message, status: "failed" })),

@@ -32,7 +32,7 @@ function fakeAnt(): AntCli & { calls: Array<string>; token: string | null } {
   return ant;
 }
 
-function services(overrides: Readonly<{ validate?: (key: string) => Promise<void>; checkModels?: (credential: ClaudeCredential) => Promise<void> }> = {}) {
+function services(overrides: Readonly<{ validate?: (key: string) => Promise<void>; checkModels?: (credential: ClaudeCredential) => Promise<void>; ant?: () => Promise<AntCli> }> = {}) {
   const store = memoryStore();
   const ant = fakeAnt();
   const clock = { now: 0 };
@@ -116,4 +116,60 @@ test("a_rejected_key_is_not_stored_and_the_credential_stays_signed_out", async (
 
   expect(store.keys.size).toBe(0);
   expect(await credentials()).toBeNull();
+});
+
+test("a_stored_key_makes_the_account_signed_in_without_resolving_ant", async () => {
+  let lookups = 0;
+  const { store, readAccount } = services({
+    ant: async () => {
+      lookups += 1;
+      throw new Error("the login shell did not answer");
+    },
+  });
+  store.keys.set("claude", "sk-ant-test-123");
+
+  expect(await readAccount()).toEqual({ provider: "claude", signedIn: true, label: "API key" });
+  expect(lookups).toBe(0);
+});
+
+test("a_rejected_stored_key_reads_as_signed_out_until_a_key_is_typed_again", async () => {
+  const { store, markRejected, readAccount, signInApiKey } = services({ validate: async () => undefined });
+  store.keys.set("claude", "sk-ant-old");
+
+  markRejected();
+
+  expect(await readAccount()).toEqual({ provider: "claude", signedIn: false, label: null });
+  await signInApiKey("sk-ant-new");
+  expect(await readAccount()).toEqual({ provider: "claude", signedIn: true, label: "API key" });
+});
+
+test("a_rejected_ant_token_is_dropped_and_the_next_read_fetches_a_new_one", async () => {
+  const { ant, credentials, markRejected } = services();
+  expect(await credentials()).toMatchObject({ accessToken: "token-1" });
+  ant.token = "token-2";
+
+  markRejected();
+
+  expect(await credentials()).toMatchObject({ accessToken: "token-2" });
+  expect(ant.calls).toEqual(["accessToken", "accessToken"]);
+});
+
+test("a_rejected_ant_account_whose_token_cannot_be_fetched_reads_as_signed_out", async () => {
+  const { ant, readAccount, markRejected, credentials } = services();
+  await credentials();
+  ant.token = null;
+
+  markRejected();
+
+  expect((await readAccount()).signedIn).toBe(false);
+});
+
+test("signing_in_through_the_console_clears_a_rejection_for_a_stored_key_route", async () => {
+  const { store, markRejected, readAccount, signInConsole } = services();
+  store.keys.set("claude", "sk-ant-old");
+  markRejected();
+
+  await signInConsole();
+
+  expect((await readAccount()).signedIn).toBe(true);
 });
