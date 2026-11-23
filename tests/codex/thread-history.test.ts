@@ -1,7 +1,7 @@
 // Invariant: a stored thread becomes the user's questions and the assistant's answers, in order, with failed turns marked.
 import { expect, test } from "vitest";
 
-import { summarizeThread, toHistory } from "../../src/codex/thread-history";
+import { listChats, summarizeThread, toHistory } from "../../src/codex/thread-history";
 import { renderContextBlock } from "../../src/shared/context-format";
 import type { Thread } from "../../src/codex/generated/v2/Thread";
 import type { ThreadItem } from "../../src/codex/generated/v2/ThreadItem";
@@ -83,4 +83,12 @@ test("a_user_message_that_merely_mentions_the_marker_is_shown_unchanged", () => 
 test("the_chat_list_title_skips_the_context_block_and_never_shows_a_cut_one", () => {
   expect(summarizeThread(thread([], { preview: `${CONTEXT}\n\nwhy 500?` })).title).toBe("why 500?");
   expect(summarizeThread(thread([], { preview: CONTEXT.slice(0, 40) })).title).toBe("New chat");
+});
+
+test("the_chat_list_leaves_out_forked_side_chats_and_lists_newest_first", () => {
+  const main = thread([], { id: "main-1", updatedAt: 10 });
+  const side = thread([], { id: "side-1", updatedAt: 30, forkedFromId: "main-1" });
+  const newer = thread([], { id: "main-2", updatedAt: 20 });
+
+  expect(listChats([main, side, newer]).map((chat) => chat.id)).toEqual(["main-2", "main-1"]);
 });

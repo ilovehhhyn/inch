@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { summarizeAccount } from "../codex/codex-client";
-import { summarizeThread, toHistory } from "../codex/thread-history";
+import { listChats, summarizeThread, toHistory } from "../codex/thread-history";
 import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
@@ -105,7 +105,7 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
       await client.resumeThread(threadId);
       return toHistory(await client.readThread(threadId));
     },
-    threadList: async () => (await (await starting).supervisor.client.listThreads()).map(summarizeThread),
+    threadList: async () => listChats(await (await starting).supervisor.client.listThreads()).map(summarizeThread),
     threadFork: async (threadId, lastTurnId) => {
       const { client } = (await starting).supervisor;
       return client.forkThread(threadId, lastTurnId, await client.defaultModelId());

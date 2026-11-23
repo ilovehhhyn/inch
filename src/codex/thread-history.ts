@@ -50,3 +50,8 @@ export function summarizeThread(thread: Thread): ThreadSummary {
   const title = [name, previewTitle(thread.preview)].find((candidate) => candidate !== "") ?? EMPTY_TITLE;
   return { id: asThreadId(thread.id), title, updatedAtSec: thread.updatedAt };
 }
+
+/** The threads that belong in the chat list: forked side chats are left out, and the newest chat comes first. */
+export function listChats(threads: ReadonlyArray<Thread>): Array<Thread> {
+  return threads.filter((thread) => thread.forkedFromId === null).sort((left, right) => right.updatedAt - left.updatedAt);
+}
