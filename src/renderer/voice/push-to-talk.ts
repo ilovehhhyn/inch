@@ -25,6 +25,8 @@ export type PushToTalkDeps = Readonly<{
   captureContext: () => Capture;
   /** Sends the spoken question with `capture` as a Command-I send; true once the question was accepted. */
   send: (question: string, capture: Capture) => Promise<boolean>;
+  /** The reason a spoken message cannot be sent now (an answer is streaming), or null; it is asked before recording starts and again before sending. */
+  refusal: () => string | null;
   /** Receives the transcript of a message that was not sent, so the words are not lost. */
   onUnsent: (text: string) => void;
   onStatus: (status: VoiceStatus) => void;
@@ -81,6 +83,11 @@ export function createPushToTalk(deps: PushToTalkDeps): PushToTalk {
       return note(messageOf(error));
     }
     if (text === "") return note(NO_SPEECH_NOTE);
+    const refusedNow = deps.refusal();
+    if (refusedNow !== null) {
+      deps.onUnsent(text);
+      return note(refusedNow);
+    }
     const wasSent = await deps.send(text, context);
     if (!wasSent) deps.onUnsent(text);
     if (stopNote === null) idle();
@@ -88,6 +95,8 @@ export function createPushToTalk(deps: PushToTalkDeps): PushToTalk {
   }
 
   async function begin(): Promise<void> {
+    const refused = deps.refusal();
+    if (refused !== null) return note(refused);
     try {
       capture = deps.captureContext();
     } catch (error) {

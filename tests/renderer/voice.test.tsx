@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { App } from "../../src/renderer/app";
+import { BUSY_HINT } from "../../src/renderer/components/Composer";
 import { MICROPHONE_DENIED_MESSAGE } from "../../src/renderer/voice/push-to-talk";
 import type { VoiceEnvironment } from "../../src/renderer/workspace";
 import { renderContextBlock } from "../../src/shared/context-format";
@@ -175,4 +176,21 @@ test("while_listening_the_composer_says_so_and_losing_focus_cancels_the_recordin
   await waitFor(() => expect(fake.recording.cancelled).toBe(true));
   expect(await screen.findByRole("status")).toHaveTextContent("Recording cancelled");
   expect(api.turnStarts).toEqual([]);
+});
+
+test("spoken_message_while_an_answer_streams_is_refused", async () => {
+  const api = new FakeMarginApi();
+  const { voice, fake } = fakeVoice();
+  const view = await openOldChat(api, voice);
+  await userEvent.type(screen.getByLabelText("Message"), "first{Enter}");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => userScroll(view, 300));
+
+  fireEvent.keyDown(window, { code: "AltRight", key: "Alt" });
+  fireEvent.keyUp(window, { code: "AltRight", key: "Alt" });
+
+  expect(await screen.findByRole("status", { name: "" })).toHaveTextContent(BUSY_HINT);
+  expect(fake.started.count).toBe(0);
+  expect(api.turnStarts).toHaveLength(1);
+  expect(api.recordings).toEqual([]);
 });

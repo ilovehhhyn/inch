@@ -28,6 +28,7 @@ type Harness = Readonly<{
   transcripts: Array<Uint8Array>;
   timers: Array<{ ms: number; fire: () => void; cancelled: boolean }>;
   requests: { count: number };
+  refusal: { message: string | null };
 }>;
 
 function harness(overrides: Partial<PushToTalkDeps> & Readonly<{ microphone?: boolean; text?: string; sendResult?: boolean }> = {}): Harness {
@@ -40,6 +41,7 @@ function harness(overrides: Partial<PushToTalkDeps> & Readonly<{ microphone?: bo
   const transcripts: Array<Uint8Array> = [];
   const timers: Array<{ ms: number; fire: () => void; cancelled: boolean }> = [];
   const requests = { count: 0 };
+  const refusal: { message: string | null } = { message: null };
   const deps: PushToTalkDeps = {
     requestMicrophone: async () => {
       requests.count += 1;
@@ -70,6 +72,7 @@ function harness(overrides: Partial<PushToTalkDeps> & Readonly<{ microphone?: bo
       sent.push({ question, capture });
       return overrides.sendResult ?? true;
     },
+    refusal: () => refusal.message,
     onUnsent: (text) => unsent.push(text),
     onStatus: (status) => statuses.push(status),
     now: () => clock.now,
@@ -82,7 +85,7 @@ function harness(overrides: Partial<PushToTalkDeps> & Readonly<{ microphone?: bo
     },
     ...overrides,
   };
-  return { voice: createPushToTalk(deps), clock, statuses, sent, unsent, captures, recordings, transcripts, timers, requests };
+  return { refusal, voice: createPushToTalk(deps), clock, statuses, sent, unsent, captures, recordings, transcripts, timers, requests };
 }
 
 async function settle(): Promise<void> {
@@ -317,4 +320,32 @@ test("a_recorder_that_cannot_start_shows_why", async () => {
 
   expect(context.statuses.at(-1)).toEqual({ kind: "note", message: "no microphone was found; connect one" });
   expect(context.sent).toEqual([]);
+});
+
+test("a_press_while_an_answer_streams_is_refused_with_the_hint_before_anything_starts", async () => {
+  const context = harness();
+  context.refusal.message = "Wait for the answer, or press Esc to stop it";
+
+  await hold(context, 1000);
+
+  expect(context.statuses.at(-1)).toEqual({ kind: "note", message: "Wait for the answer, or press Esc to stop it" });
+  expect(context.captures.count).toBe(0);
+  expect(context.requests.count).toBe(0);
+  expect(context.recordings).toEqual([]);
+  expect(context.sent).toEqual([]);
+});
+
+test("an_answer_that_starts_streaming_while_the_person_talks_stops_the_send_and_returns_the_words", async () => {
+  const context = harness();
+
+  context.voice.keyDown({ code: PUSH_TO_TALK_KEY.code, repeat: false });
+  await settle();
+  context.refusal.message = "Wait for the answer, or press Esc to stop it";
+  context.clock.now += 1000;
+  context.voice.keyUp({ code: PUSH_TO_TALK_KEY.code });
+  await settle();
+
+  expect(context.sent).toEqual([]);
+  expect(context.unsent).toEqual(["does this look right?"]);
+  expect(context.statuses.at(-1)).toEqual({ kind: "note", message: "Wait for the answer, or press Esc to stop it" });
 });

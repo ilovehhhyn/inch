@@ -9,7 +9,7 @@ import type { ThreadId, TurnId } from "../shared/provider-events";
 import { PROVIDER_IDS, PROVIDER_NAMES, type ProviderId } from "../shared/provider-id";
 import { messagesAfterTurn, type ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
-import { Composer, type ComposerPickers, type SendMode } from "./components/Composer";
+import { BUSY_HINT, Composer, type ComposerPickers, type SendMode } from "./components/Composer";
 import { DiffPane } from "./components/DiffPane";
 import { Sidebar } from "./components/Sidebar";
 import { SideChatPane } from "./components/SideChatPane";
@@ -329,7 +329,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
 
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>({ kind: "idle" });
   /** The newest send and draft, so the one push-to-talk controller of this window always acts on the chat that is open now. */
-  const speechTargets = useRef<{ send: (text: string, capture: Capture) => Promise<boolean>; restore: (text: string) => void } | null>(null);
+  const speechTargets = useRef<{ send: (text: string, capture: Capture) => Promise<boolean>; restore: (text: string) => void; refusal: () => string | null } | null>(null);
   useLayoutEffect(() => {
     speechTargets.current = {
       send: async (text, capture) => {
@@ -338,6 +338,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
         return wasSent;
       },
       restore: (text) => onDraftChange(draft + text),
+      refusal: () => (sender.isSending(mainThread) || mainView.activeTurn !== null ? BUSY_HINT : null),
     };
   });
   useEffect(() => {
@@ -350,6 +351,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
         if (speechTargets.current === null) throw new Error("the window is not ready to send a spoken message");
         return speechTargets.current.send(text, capture);
       },
+      refusal: () => speechTargets.current?.refusal() ?? null,
       onUnsent: (text) => speechTargets.current?.restore(text),
       onStatus: setVoiceStatus,
       now: monotonicClock,
