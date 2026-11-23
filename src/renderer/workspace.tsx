@@ -143,7 +143,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
           <Composer
             draft={draft}
             onDraftChange={onDraftChange}
-            onSend={(question, mode) => void sender.send(mainThread, question, mode, setMainThread)}
+            onSend={(question, mode) => sender.send(mainThread, question, mode, setMainThread)}
             onInterrupt={() => {
               if (mainThread !== null && mainView.activeTurn !== null) interrupt(mainThread, mainView.activeTurn);
             }}
@@ -163,7 +163,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
               store={store}
               tracker={tracker}
               isSending={sender.isSending(chat.threadId)}
-              onSend={(threadId, question, mode) => void sender.send(threadId, question, mode, setMainThread)}
+              onSend={(threadId, question, mode) => sender.send(threadId, question, mode, setMainThread)}
               onInterrupt={interrupt}
               onRetry={(threadId) => void sender.retry(threadId)}
               onClose={closeSideChat}

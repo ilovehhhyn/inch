@@ -56,7 +56,7 @@ test("events_that_arrive_before_turn_start_answers_are_not_lost", async () => {
   expect(await screen.findByText("early text")).toBeInTheDocument();
 });
 
-test("a_rejected_turn_start_shows_the_error_and_the_composer_accepts_the_next_message", async () => {
+test("a_rejected_turn_start_shows_the_error_and_keeps_the_typed_question", async () => {
   const api = new FakeMarginApi();
   api.turnStart = async () => {
     throw new Error("Codex is not running; the app-server has not started or is restarting");
@@ -66,9 +66,7 @@ test("a_rejected_turn_start_shows_the_error_and_the_composer_accepts_the_next_me
   await typeAndSend("q");
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Codex is not running");
-  expect(screen.getByLabelText("Message")).toHaveValue("");
-  await userEvent.type(screen.getByLabelText("Message"), "again");
-  expect(screen.getByLabelText("Message")).toHaveValue("again");
+  expect(screen.getByLabelText("Message")).toHaveValue("q");
 });
 
 test("selecting_a_stored_chat_opens_it_and_shows_its_messages", async () => {
@@ -142,4 +140,25 @@ test("retry_is_refused_while_another_answer_is_streaming", async () => {
   await waitFor(() => expect(api.turnStarts).toHaveLength(2));
 
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+test("command_i_with_nothing_to_read_fails_visibly_and_keeps_the_typed_question", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+
+  await userEvent.type(await screen.findByLabelText("Message"), "what is this?");
+  await userEvent.keyboard("{Meta>}i{/Meta}");
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(/viewport height must be positive/);
+  expect(screen.getByLabelText("Message")).toHaveValue("what is this?");
+  expect(api.turnStarts).toEqual([]);
+});
+
+test("a_successful_send_clears_the_draft", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+
+  await typeAndSend("hello");
+
+  await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
 });

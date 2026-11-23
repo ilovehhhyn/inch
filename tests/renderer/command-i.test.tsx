@@ -99,7 +99,7 @@ test("command_i_changes_nothing_on_screen", async () => {
   await userEvent.keyboard(COMMAND_I);
   await waitFor(() => expect(api.turnStarts).toHaveLength(1));
 
-  expect(screen.getByLabelText("Message")).toHaveValue("");
+  await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
   expect(outsideThread()).toBe(before);
   expect(document.body.textContent).not.toMatch(/context|attached|screen/i);
   expect(document.querySelectorAll("img, svg, [role='img']")).toHaveLength(0);

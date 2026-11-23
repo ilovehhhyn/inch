@@ -15,7 +15,7 @@ export type SideChatPaneProps = Readonly<{
   store: ThreadStore;
   tracker: ScrollTracker;
   isSending: boolean;
-  onSend: (threadId: ThreadId, question: string, mode: SendMode) => void;
+  onSend: (threadId: ThreadId, question: string, mode: SendMode) => Promise<boolean>;
   onInterrupt: (threadId: ThreadId, turnId: TurnId) => void;
   onRetry: (threadId: ThreadId) => void;
   onClose: (threadId: ThreadId) => void;

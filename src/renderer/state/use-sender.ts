@@ -31,7 +31,7 @@ function contextFor(mode: SendMode, tracker: ScrollTracker): string | null {
 
 export type Sender = Readonly<{
   /** Sends in `threadId`, or in a new thread when null; `onThreadStarted` receives that new thread's id before the turn starts. */
-  send: (threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void) => Promise<void>;
+  send: (threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void) => Promise<boolean>;
   /** Sends the thread's last question again with the context it had; it reads the screen again for nobody. */
   retry: (threadId: ThreadId) => Promise<void>;
   isSending: (threadId: ThreadId | null) => boolean;
@@ -52,7 +52,7 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
   }, []);
 
   const send = useCallback(
-    async (threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void): Promise<void> => {
+    async (threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void): Promise<boolean> => {
       const key = threadId ?? NEW_CHAT_KEY;
       setPendingKey(key, true);
       let target = threadId;
@@ -65,8 +65,10 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
         lastSent.current.set(target, { question, contextText });
         const turnId = await api.turnStart(target, question, contextText);
         store.begin(target, { turnId, question });
+        return true;
       } catch (error) {
         report(target, error);
+        return false;
       } finally {
         setPendingKey(key, false);
       }

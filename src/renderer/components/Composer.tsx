@@ -1,5 +1,5 @@
 // Holds the text the user is typing and turns Enter, Command-I and Escape into send and interrupt requests; the draft lives in the parent.
-import { useState, type KeyboardEvent, type ReactElement } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 
 export type SendMode = "plain" | "withContext";
 
@@ -9,7 +9,8 @@ export const EMPTY_HINT = "Type a question first";
 export type ComposerProps = Readonly<{
   draft: string;
   onDraftChange: (draft: string) => void;
-  onSend: (question: string, mode: SendMode) => void;
+  /** Resolves true once the question was accepted; the draft stays in the box until then, and after any failure. */
+  onSend: (question: string, mode: SendMode) => Promise<boolean>;
   onInterrupt: () => void;
   /** True while an answer streams: every send is refused and nothing is queued. */
   busy: boolean;
@@ -30,13 +31,26 @@ function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null 
 export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message" }: ComposerProps): ReactElement {
   const [hint, setHint] = useState<string | null>(null);
 
+  const latestDraft = useRef(draft);
+  useLayoutEffect(() => {
+    latestDraft.current = draft;
+  }, [draft]);
+
+  /** After a successful send only the sent text is removed; anything typed while the send was in flight stays. */
+  function clearSent(sentDraft: string): void {
+    const current = latestDraft.current;
+    if (current.startsWith(sentDraft)) onDraftChange(current.slice(sentDraft.length));
+  }
+
   function trySend(mode: SendMode): void {
     const question = draft.trim();
     if (busy) return setHint(BUSY_HINT);
     if (question === "") return setHint(EMPTY_HINT);
     setHint(null);
-    onDraftChange("");
-    onSend(question, mode);
+    const sentDraft = draft;
+    void onSend(question, mode).then((wasSent) => {
+      if (wasSent) clearSent(sentDraft);
+    });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {

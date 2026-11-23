@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Invariant: Enter sends a plain message and clears the box, Shift+Enter adds a line, and a send is refused while an answer streams.
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
 import { expect, test } from "vitest";
@@ -9,13 +9,16 @@ import { Composer, BUSY_HINT, type SendMode } from "../../src/renderer/component
 
 type Sent = Readonly<{ question: string; mode: SendMode }>;
 
-function Harness(props: Readonly<{ sent: Array<Sent>; interrupts?: Array<true>; busy?: boolean }>): ReactElement {
+function Harness(props: Readonly<{ sent: Array<Sent>; interrupts?: Array<true>; busy?: boolean; outcome?: boolean }>): ReactElement {
   const [draft, setDraft] = useState("");
   return (
     <Composer
       draft={draft}
       onDraftChange={setDraft}
-      onSend={(question, mode) => props.sent.push({ question, mode })}
+      onSend={async (question, mode) => {
+        props.sent.push({ question, mode });
+        return props.outcome ?? true;
+      }}
       onInterrupt={() => props.interrupts?.push(true)}
       busy={props.busy ?? false}
     />
@@ -83,4 +86,29 @@ test("the_send_button_sends_plain", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
   expect(sent).toEqual([{ question: "hi", mode: "plain" }]);
+});
+
+test("a_send_that_fails_keeps_the_draft_so_it_is_not_retyped", async () => {
+  const sent: Array<Sent> = [];
+  render(<Harness sent={sent} outcome={false} />);
+
+  await userEvent.type(screen.getByLabelText("Message"), "a long question{Enter}");
+
+  expect(sent).toEqual([{ question: "a long question", mode: "plain" }]);
+  expect(screen.getByLabelText("Message")).toHaveValue("a long question");
+});
+
+test("text_typed_while_a_send_is_in_flight_is_kept_and_only_the_sent_text_is_cleared", async () => {
+  let finish: (sent: boolean) => void = () => undefined;
+  function Slow(): ReactElement {
+    const [draft, setDraft] = useState("");
+    return <Composer draft={draft} onDraftChange={setDraft} onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} onInterrupt={() => undefined} busy={false} />;
+  }
+  render(<Slow />);
+  await userEvent.type(screen.getByLabelText("Message"), "first{Enter}");
+  await userEvent.type(screen.getByLabelText("Message"), " and more");
+
+  await act(async () => finish(true));
+
+  expect(screen.getByLabelText("Message")).toHaveValue(" and more");
 });
