@@ -22,6 +22,7 @@ import { runGitDiff } from "./git-diff";
 import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
+import { createChoiceStore } from "./choice-store";
 import { createSafeStorageSecretStore } from "./secret-store";
 import { appendLatencyRecord } from "./metrics-store";
 import { createSupervisedCodexProvider } from "./supervised-codex-provider";
@@ -113,6 +114,10 @@ function metricsPath(): string {
   return join(app.getPath("userData"), "metrics.jsonl");
 }
 
+function choicesPath(): string {
+  return join(app.getPath("userData"), "choices.json");
+}
+
 function layoutPath(): string {
   return join(app.getPath("userData"), "layout.json");
 }
@@ -144,6 +149,7 @@ async function startCodex(): Promise<StartedCodex> {
 }
 
 function registerHandlers(started: Promise<StartedCodex>): void {
+  const choices = createChoiceStore(choicesPath());
   /** The running Codex client; a request made during a restart waits for it instead of failing. */
   const readyClient = async () => (await started).supervisor.ready();
   for (const provider of Object.values(providers)) provider.onEvent(sendProviderEvent);
@@ -164,6 +170,8 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     claudeSignInConsole: () => requireClaude().signInConsole(),
     claudeSignInApiKey: (apiKey) => requireClaude().signInApiKey(apiKey),
     claudeSignOut: () => requireClaude().signOut(),
+    modelsList: (provider) => providerFor(provider).listModels(),
+    choiceRead: (threadId) => choices.read(threadId),
     threadStart: (provider) => providerFor(provider).startThread(),
     threadOpen: (provider, threadId) => providerFor(provider).readThread(threadId),
     threadList: async () => (await Promise.all(Object.values(providers).map((provider) => provider.listThreads()))).flat().sort((left, right) => right.updatedAtSec - left.updatedAtSec),
@@ -177,7 +185,11 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     diffRead: async (folder) => runGitDiff({ folder: requireSavedDiffFolder(folder, (await readLayout(layoutPath())).diffFolder), base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
-    turnStart: (provider, threadId, question, context) => providerFor(provider).startTurn(threadId, { question, context }),
+    turnStart: async (provider, threadId, question, context, choice) => {
+      const turnId = await providerFor(provider).startTurn(threadId, { question, context, model: choice.model, reasoning: choice.reasoning });
+      await choices.write(threadId, choice);
+      return turnId;
+    },
     turnInterrupt: (provider, threadId, turnId) => providerFor(provider).interruptTurn(threadId, turnId),
     metricsAppend: (record) => appendLatencyRecord(metricsPath(), record),
   });

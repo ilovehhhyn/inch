@@ -2,6 +2,7 @@
 import type { AuthEvent, LoginKind, LoginStarted } from "./auth";
 import type { ProviderAccount } from "./chat-provider";
 import type { Layout } from "./layout";
+import type { ModelChoice, ModelOption } from "./models";
 import type { ProviderId } from "./provider-id";
 import type { LatencyRecord } from "./latency-record";
 import type { ProviderEvent, ThreadId, TurnId } from "./provider-events";
@@ -20,6 +21,8 @@ export const IPC_CHANNELS = {
   claudeSignInConsole: "claude:signInConsole",
   claudeSignInApiKey: "claude:signInApiKey",
   claudeSignOut: "claude:signOut",
+  modelsList: "models:list",
+  choiceRead: "choice:read",
   threadStart: "thread:start",
   threadOpen: "thread:open",
   threadList: "thread:list",
@@ -54,6 +57,10 @@ export type MarginApi = Readonly<{
   claudeSignInApiKey(apiKey: string): Promise<void>;
   /** Deletes the stored key and logs out of Margin's own `ant` profile; other `ant` profiles and Claude Code are untouched. */
   claudeSignOut(): Promise<void>;
+  /** The models `provider` offers, its default first; rejects when the provider is not signed in or not running. */
+  modelsList(provider: ProviderId): Promise<ReadonlyArray<ModelOption>>;
+  /** The model and reasoning level last used in a chat, or null for a chat that has none. */
+  choiceRead(threadId: ThreadId): Promise<ModelChoice | null>;
   /** Starts a thread of `provider` on its default model. */
   threadStart(provider: ProviderId): Promise<ThreadId>;
   /** Opens a stored thread of `provider` and returns its messages. */
@@ -68,8 +75,8 @@ export type MarginApi = Readonly<{
   diffRead(folder: string): Promise<string>;
   layoutRead(): Promise<Layout>;
   layoutWrite(layout: Layout): Promise<void>;
-  /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message. */
-  turnStart(provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId>;
+  /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message; `choice` must be one of `modelsList(provider)` and is remembered for the chat. */
+  turnStart(provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null, choice: ModelChoice): Promise<TurnId>;
   turnInterrupt(provider: ProviderId, threadId: ThreadId, turnId: TurnId): Promise<void>;
   /** Appends one latency record (numbers only) to metrics.jsonl in Margin's application support folder. */
   metricsAppend(record: LatencyRecord): Promise<void>;

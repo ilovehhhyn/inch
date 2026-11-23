@@ -4,12 +4,16 @@ import type { ProviderAccount } from "../../src/shared/chat-provider";
 import { DEFAULT_LAYOUT, type Layout } from "../../src/shared/layout";
 import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../../src/shared/provider-events";
+import type { ModelChoice, ModelOption } from "../../src/shared/models";
 import type { LatencyRecord } from "../../src/shared/latency-record";
 import type { ProviderId } from "../../src/shared/provider-id";
 import type { StartupErrorInfo } from "../../src/shared/startup-error";
 import type { DisplayMessage, ThreadSummary } from "../../src/shared/thread-history";
 
 export const SIGNED_IN_CHATGPT: AccountSummary = { signedIn: true, accountType: "chatgpt", planType: "plus" };
+
+/** The choice a chat starts with when nothing is stored: the first Codex model with its default level. */
+export const CODEX_DEFAULT_CHOICE: ModelChoice = { model: "gpt-5.6-sol", reasoning: "medium" };
 
 export class FakeMarginApi implements MarginApi {
   account: AccountSummary = SIGNED_IN_CHATGPT;
@@ -18,7 +22,7 @@ export class FakeMarginApi implements MarginApi {
   readonly calls: Array<string> = [];
   readonly apiKeys: Array<string> = [];
   /** Every `turn/start` the window sent: the exact arguments, in order. */
-  readonly turnStarts: Array<Readonly<{ threadId: ThreadId; question: string; contextText: string | null }>> = [];
+  readonly turnStarts: Array<Readonly<{ threadId: ThreadId; question: string; contextText: string | null; choice: ModelChoice }>> = [];
   /** Every provider-scoped call as `<call>:<provider>`, in order, so a test can see which provider a call named. */
   readonly providerCalls: Array<string> = [];
   readonly latencyRecords: Array<LatencyRecord> = [];
@@ -85,6 +89,21 @@ export class FakeMarginApi implements MarginApi {
     };
   };
 
+  /** What `modelsList` answers per provider; every provider has one model with three levels unless a test sets more. */
+  models = new Map<ProviderId, ReadonlyArray<ModelOption>>([
+    ["codex", [{ provider: "codex", id: "gpt-5.6-sol", label: "GPT-5.6 Sol", reasoningLevels: ["low", "medium", "high"], defaultReasoning: "medium", acceptsImages: true, acceptsPdfs: false }]],
+    ["claude", [{ provider: "claude", id: "claude-opus-5-5", label: "Claude Opus 5.5", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], defaultReasoning: "low", acceptsImages: true, acceptsPdfs: true }]],
+  ]);
+  readonly modelListCalls: Array<ProviderId> = [];
+  /** The choice `choiceRead` answers per chat. */
+  choices = new Map<ThreadId, ModelChoice>();
+  modelsList = async (provider: ProviderId): Promise<ReadonlyArray<ModelOption>> => {
+    this.modelListCalls.push(provider);
+    const models = this.models.get(provider);
+    if (models === undefined) throw new Error(`the fake has no models for ${provider}; add them to models`);
+    return models;
+  };
+  choiceRead = async (threadId: ThreadId): Promise<ModelChoice | null> => this.choices.get(threadId) ?? null;
   threadStart = async (provider: ProviderId): Promise<ThreadId> => {
     this.calls.push("threadStart");
     this.providerCalls.push(`threadStart:${provider}`);
@@ -117,9 +136,10 @@ export class FakeMarginApi implements MarginApi {
     this.layoutWrites.push(layout);
     this.layout = layout;
   };
-  turnStart = async (provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId> => {
+  turnStart = async (provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null, choice: ModelChoice): Promise<TurnId> => {
     this.providerCalls.push(`turnStart:${provider}`);
-    this.turnStarts.push({ threadId, question, contextText });
+    this.turnStarts.push({ threadId, question, contextText, choice });
+    this.choices.set(threadId, choice);
     this.turnCounter += 1;
     return asTurnId(`turn-${this.turnCounter}`);
   };

@@ -6,11 +6,12 @@ import type { ProviderAccount } from "../shared/chat-provider";
 import type { ScreenContext } from "../shared/context-format";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import { parseLayout, type Layout } from "../shared/layout";
+import type { ModelChoice, ModelOption } from "../shared/models";
 import { parseProviderId, type ProviderId } from "../shared/provider-id";
 import { asThreadId, asTurnId, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 
-import { parseScreenContext } from "./ipc-arguments";
+import { parseModelChoice, parseScreenContext } from "./ipc-arguments";
 
 export type IpcHandlers = Readonly<{
   startupStatus: () => Promise<StartupStatus>;
@@ -22,6 +23,8 @@ export type IpcHandlers = Readonly<{
   claudeSignInConsole: () => Promise<void>;
   claudeSignInApiKey: (apiKey: string) => Promise<void>;
   claudeSignOut: () => Promise<void>;
+  modelsList: (provider: ProviderId) => Promise<ReadonlyArray<ModelOption>>;
+  choiceRead: (threadId: ThreadId) => Promise<ModelChoice | null>;
   threadStart: (provider: ProviderId) => Promise<ThreadId>;
   threadOpen: (provider: ProviderId, threadId: ThreadId) => Promise<ReadonlyArray<DisplayMessage>>;
   threadList: () => Promise<ReadonlyArray<ThreadSummary>>;
@@ -30,7 +33,7 @@ export type IpcHandlers = Readonly<{
   diffRead: (folder: string) => Promise<string>;
   layoutRead: () => Promise<Layout>;
   layoutWrite: (layout: Layout) => Promise<void>;
-  turnStart: (provider: ProviderId, threadId: ThreadId, question: string, context: ScreenContext | null) => Promise<TurnId>;
+  turnStart: (provider: ProviderId, threadId: ThreadId, question: string, context: ScreenContext | null, choice: ModelChoice) => Promise<TurnId>;
   turnInterrupt: (provider: ProviderId, threadId: ThreadId, turnId: TurnId) => Promise<void>;
   metricsAppend: (record: unknown) => Promise<void>;
 }>;
@@ -53,6 +56,8 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.claudeSignInConsole, () => handlers.claudeSignInConsole());
   ipcMain.handle(IPC_CHANNELS.claudeSignInApiKey, (_event, apiKey: unknown) => handlers.claudeSignInApiKey(requireString(apiKey, "apiKey")));
   ipcMain.handle(IPC_CHANNELS.claudeSignOut, () => handlers.claudeSignOut());
+  ipcMain.handle(IPC_CHANNELS.modelsList, (_event, provider: unknown) => handlers.modelsList(parseProviderId(provider)));
+  ipcMain.handle(IPC_CHANNELS.choiceRead, (_event, threadId: unknown) => handlers.choiceRead(asThreadId(requireString(threadId, "threadId"))));
   ipcMain.handle(IPC_CHANNELS.threadStart, (_event, provider: unknown) => handlers.threadStart(parseProviderId(provider)));
   ipcMain.handle(IPC_CHANNELS.threadOpen, (_event, provider: unknown, threadId: unknown) => handlers.threadOpen(parseProviderId(provider), asThreadId(requireString(threadId, "threadId"))));
   ipcMain.handle(IPC_CHANNELS.threadList, () => handlers.threadList());
@@ -63,8 +68,8 @@ export function registerIpc(handlers: IpcHandlers): void {
   ipcMain.handle(IPC_CHANNELS.diffRead, (_event, folder: unknown) => handlers.diffRead(requireString(folder, "folder")));
   ipcMain.handle(IPC_CHANNELS.layoutRead, () => handlers.layoutRead());
   ipcMain.handle(IPC_CHANNELS.layoutWrite, (_event, layout: unknown) => handlers.layoutWrite(parseLayout(layout, "sent by the window")));
-  ipcMain.handle(IPC_CHANNELS.turnStart, (_event, provider: unknown, threadId: unknown, question: unknown, contextText: unknown) =>
-    handlers.turnStart(parseProviderId(provider), asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), parseScreenContext(contextText)),
+  ipcMain.handle(IPC_CHANNELS.turnStart, (_event, provider: unknown, threadId: unknown, question: unknown, contextText: unknown, choice: unknown) =>
+    handlers.turnStart(parseProviderId(provider), asThreadId(requireString(threadId, "threadId")), requireString(question, "question"), parseScreenContext(contextText), parseModelChoice(choice)),
   );
   ipcMain.handle(IPC_CHANNELS.metricsAppend, (_event, record: unknown) => handlers.metricsAppend(record));
   ipcMain.handle(IPC_CHANNELS.turnInterrupt, (_event, provider: unknown, threadId: unknown, turnId: unknown) =>
