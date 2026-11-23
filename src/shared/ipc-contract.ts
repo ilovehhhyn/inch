@@ -1,4 +1,5 @@
 // Names the IPC channels and the API object the preload script gives the renderer; the one place both sides agree.
+import type { AttachmentChip } from "./attachment";
 import type { AuthEvent, LoginKind, LoginStarted } from "./auth";
 import type { ProviderAccount } from "./chat-provider";
 import type { Layout } from "./layout";
@@ -23,6 +24,8 @@ export const IPC_CHANNELS = {
   claudeSignOut: "claude:signOut",
   modelsList: "models:list",
   choiceRead: "choice:read",
+  attachmentAdd: "attachment:add",
+  attachmentDiscard: "attachment:discard",
   threadStart: "thread:start",
   threadOpen: "thread:open",
   threadList: "thread:list",
@@ -61,6 +64,10 @@ export type MarginApi = Readonly<{
   modelsList(provider: ProviderId): Promise<ReadonlyArray<ModelOption>>;
   /** The model and reasoning level last used in a chat, or null for a chat that has none. */
   choiceRead(threadId: ThreadId): Promise<ModelChoice | null>;
+  /** Copies a file into Margin's attachments folder after checking its content and size; rejects with a message that names the file and the rule. */
+  attachmentAdd(name: string, bytes: Uint8Array): Promise<AttachmentChip>;
+  /** Removes an attached file the user took off the message. */
+  attachmentDiscard(id: string): Promise<void>;
   /** Starts a thread of `provider` on its default model. */
   threadStart(provider: ProviderId): Promise<ThreadId>;
   /** Opens a stored thread of `provider` and returns its messages. */
@@ -75,8 +82,8 @@ export type MarginApi = Readonly<{
   diffRead(folder: string): Promise<string>;
   layoutRead(): Promise<Layout>;
   layoutWrite(layout: Layout): Promise<void>;
-  /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message; `choice` must be one of `modelsList(provider)` and is remembered for the chat. */
-  turnStart(provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null, choice: ModelChoice): Promise<TurnId>;
+  /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message; `choice` must be one of `modelsList(provider)` and is remembered for the chat; `attachmentIds` name files from `attachmentAdd`, which reach the model before the context. */
+  turnStart(provider: ProviderId, threadId: ThreadId, question: string, contextText: string | null, choice: ModelChoice, attachmentIds: ReadonlyArray<string>): Promise<TurnId>;
   turnInterrupt(provider: ProviderId, threadId: ThreadId, turnId: TurnId): Promise<void>;
   /** Appends one latency record (numbers only) to metrics.jsonl in Margin's application support folder. */
   metricsAppend(record: LatencyRecord): Promise<void>;

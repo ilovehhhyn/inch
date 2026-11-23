@@ -1,4 +1,5 @@
 // Parses the untrusted arguments of IPC calls that carry more structure than a string.
+import { ATTACHMENT_LIMITS } from "../shared/attachment";
 import { parseContextBlock, type ScreenContext } from "../shared/context-format";
 import type { ModelChoice } from "../shared/models";
 
@@ -39,4 +40,22 @@ export function parseModelChoice(value: unknown): ModelChoice {
   const isExact = keys.length === 2 && keys[0] === "model" && keys[1] === "reasoning";
   if (!isExact || typeof model !== "string" || model === "" || typeof reasoning !== "string" || reasoning === "") throw new Error(fix);
   return { model, reasoning };
+}
+
+/** The largest file any kind allows; a larger buffer is refused before it is classified or copied. */
+export const MAX_ATTACHMENT_BYTES = Math.max(ATTACHMENT_LIMITS.imageBytes, ATTACHMENT_LIMITS.pdfBytes, ATTACHMENT_LIMITS.textBytes);
+
+/** A file name and its bytes, as the window sends them; the bytes are bounded before anything reads them. */
+export function parseAttachmentFile(name: unknown, bytes: unknown): Readonly<{ name: string; bytes: Uint8Array }> {
+  if (typeof name !== "string") throw new Error(`attachment name must be a string, got ${typeof name}`);
+  if (!(bytes instanceof Uint8Array)) throw new Error("attachment bytes must be a Uint8Array; the window reads the file with arrayBuffer()");
+  if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error(`cannot attach \`${name}\`; no file may be larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB`);
+  return { name, bytes };
+}
+
+/** Accepts a list of at most the per-message limit of strings. */
+export function parseAttachmentIds(value: unknown): ReadonlyArray<string> {
+  if (!Array.isArray(value) || !value.every((id): id is string => typeof id === "string")) throw new Error("attachmentIds must be a list of strings; the window sends the ids attachmentAdd returned");
+  if (value.length > ATTACHMENT_LIMITS.perMessage) throw new Error(`cannot attach more than ${ATTACHMENT_LIMITS.perMessage} files to one message; remove one first`);
+  return value;
 }

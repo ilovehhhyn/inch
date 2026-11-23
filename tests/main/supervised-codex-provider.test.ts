@@ -30,7 +30,7 @@ test("a_call_waits_for_the_client_that_a_restart_produces_and_uses_it", async ()
   });
   const { provider } = createSupervisedCodexProvider(() => restarting);
 
-  const pending = provider.startTurn(asThreadId("thread-1"), { question: "hello", context: null, model: "gpt-5.6-sol", reasoning: "high" });
+  const pending = provider.startTurn(asThreadId("thread-1"), { question: "hello", context: null, model: "gpt-5.6-sol", reasoning: "high", attachments: [] });
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(fake.received().filter((message) => message.method === "turn/start")).toEqual([]);
   release(client);

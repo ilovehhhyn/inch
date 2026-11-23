@@ -34,10 +34,6 @@ export type AttachmentStore = Readonly<{
 
 export type AttachmentStoreOptions = Readonly<{ directory: string; createId?: () => string }>;
 
-function isMissingFile(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
 function requireSafeChatId(chatId: string): void {
   if (!SAFE_CHAT_ID.test(chatId)) throw new Error(`chat id \`${chatId}\` must be letters, digits, dashes or underscores; it names a folder in Margin's attachments folder`);
 }

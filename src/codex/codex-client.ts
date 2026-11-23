@@ -15,6 +15,7 @@ import { buildMcpDisableConfig } from "./mcp-overrides";
 import type { Thread } from "./generated/v2/Thread";
 import type { ThreadListResponse } from "./generated/v2/ThreadListResponse";
 import type { Model } from "./generated/v2/Model";
+import type { UserInput } from "./generated/v2/UserInput";
 import type { ModelOption } from "../shared/models";
 import type { RpcConnection } from "./rpc-connection";
 import type { JsonValue, Unsubscribe } from "./rpc-types";
@@ -336,15 +337,16 @@ export class CodexClient {
   }
 
   /**
-   * Sends the context and the question as two text items; the context item ends with a blank line so they do not run together.
+   * Sends the attachment items, then the context and the question as two text items; the context item ends with a blank line so they do not run together.
    * `model` and `effort` apply to this turn and the turns after it, and a restarted app-server resumes the thread with `model`.
    */
-  async startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: RenderedContext | null; model: string; effort: string }>): Promise<TurnId> {
+  async startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: RenderedContext | null; model: string; effort: string; attachmentItems: ReadonlyArray<UserInput> }>): Promise<TurnId> {
     requireText(input.question, "question");
     requireText(input.model, "model");
     requireText(input.effort, "effort");
-    const items = [...(input.context === null ? [] : [input.context.text + CONTEXT_SEPARATOR]), input.question];
-    const { turn } = await this.connection.request("turn/start", { threadId, input: items.map((text) => ({ type: "text" as const, text, text_elements: [] })), model: input.model, effort: input.effort });
+    const texts = [...(input.context === null ? [] : [input.context.text + CONTEXT_SEPARATOR]), input.question];
+    const items: Array<UserInput> = [...input.attachmentItems, ...texts.map((text) => ({ type: "text" as const, text, text_elements: [] }))];
+    const { turn } = await this.connection.request("turn/start", { threadId, input: items, model: input.model, effort: input.effort });
     this.models.set(threadId, input.model);
     const turnId = asTurnId(turn.id);
     this.turns.set(turnId, threadId);

@@ -1,6 +1,7 @@
 // Gives the Codex provider the client that is running now, waiting through a restart, and fans supervisor events out to subscribers.
 import { createCodexProvider } from "../codex/codex-provider";
 import type { CodexClient } from "../codex/codex-client";
+import type { AttachmentContent } from "../shared/attachment";
 import type { ChatProvider } from "../shared/chat-provider";
 import type { ProviderEvent } from "../shared/provider-events";
 
@@ -15,9 +16,9 @@ export type SupervisedCodexProvider = Readonly<{
  * Events come from `publish`, not from a client, because a client dies with its app-server and the supervisor also
  * reports the failed turn of a crash.
  */
-export function createSupervisedCodexProvider(ready: () => Promise<CodexClient>): SupervisedCodexProvider {
+export function createSupervisedCodexProvider(ready: () => Promise<CodexClient>, content?: AttachmentContent): SupervisedCodexProvider {
   const handlers = new Set<(event: ProviderEvent) => void>();
-  const current = async (): Promise<ChatProvider> => createCodexProvider(await ready());
+  const current = async (): Promise<ChatProvider> => createCodexProvider(await ready(), content);
   const provider: ChatProvider = {
     id: "codex",
     readAccount: async () => (await current()).readAccount(),

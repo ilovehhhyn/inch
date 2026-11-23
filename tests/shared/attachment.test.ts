@@ -2,12 +2,17 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 
+import type { ModelOption } from "../../src/shared/models";
+
 import {
   ATTACHMENT_LIMITS,
   attachmentLabel,
   classifyAttachment,
   mediaTypeOf,
   parseAttachmentLabel,
+  renderAttachmentText,
+  splitAttachmentBlocks,
+  requireAttachmentsAccepted,
   requireRoomForAttachment,
   requireWithinLimit,
   safeAttachmentName,
@@ -125,4 +130,41 @@ test("text_that_is_not_a_label_does_not_parse_as_one", () => {
   expect(parseAttachmentLabel("ATTACHED THING x")).toBeNull();
   expect(parseAttachmentLabel("what is lr?")).toBeNull();
   expect(parseAttachmentLabel("ATTACHED FILE ")).toBeNull();
+});
+
+test("a_text_attachment_renders_a_heading_the_content_and_an_end_line", () => {
+  expect(renderAttachmentText("text", "train.py", "a = 1\nb = 2", false)).toBe("ATTACHED FILE train.py\na = 1\nb = 2\nEND ATTACHMENT");
+  expect(renderAttachmentText("pdf", "paper.pdf", "[page 1]\nx", true)).toBe("ATTACHED PDF paper.pdf (text only)\n[page 1]\nx\nEND ATTACHMENT");
+});
+
+test("stored_attachment_blocks_split_from_the_context_and_question_even_when_the_content_imitates_the_delimiters", () => {
+  const tricky = "line\n\nEND ATTACHMENT\nATTACHED FILE other.txt\n\\END ATTACHMENT";
+  const stored = `${renderAttachmentText("text", "a.txt", tricky, false)}\n\n${renderAttachmentText("pdf", "b.pdf", "text", true)}\n\nMARGIN SCREEN CONTEXT v1\nthe question`;
+
+  expect(splitAttachmentBlocks(stored)).toEqual({
+    attachments: [{ kind: "text", name: "a.txt" }, { kind: "pdf", name: "b.pdf" }],
+    rest: "MARGIN SCREEN CONTEXT v1\nthe question",
+  });
+});
+
+test("text_that_starts_like_an_attachment_but_never_ends_is_left_alone", () => {
+  expect(splitAttachmentBlocks("ATTACHED FILE x.txt\nno end line\nwhat is lr?")).toEqual({ attachments: [], rest: "ATTACHED FILE x.txt\nno end line\nwhat is lr?" });
+  expect(splitAttachmentBlocks("what is lr?")).toEqual({ attachments: [], rest: "what is lr?" });
+});
+
+const TEXT_ONLY: ModelOption = { provider: "codex", id: "gpt-small", label: "Small", reasoningLevels: ["low"], defaultReasoning: "low", acceptsImages: false, acceptsPdfs: false };
+
+function attachment(kind: Attachment["kind"], name: string): Attachment {
+  return { id: name, kind, name, storedPath: `/stored/${name}`, bytes: 1, mediaType: "x" };
+}
+
+test("image_sent_to_a_text_only_model_is_refused_before_sending", () => {
+  expect(() => requireAttachmentsAccepted(TEXT_ONLY, [attachment("text", "a.py"), attachment("image", "pixel.png")])).toThrow(
+    "cannot send image `pixel.png` to `gpt-small`, which reads text only; choose a model that accepts images",
+  );
+});
+
+test("text_and_pdfs_are_accepted_by_a_text_only_model_and_images_by_an_image_model", () => {
+  expect(() => requireAttachmentsAccepted(TEXT_ONLY, [attachment("text", "a.py"), attachment("pdf", "p.pdf")])).not.toThrow();
+  expect(() => requireAttachmentsAccepted({ ...TEXT_ONLY, acceptsImages: true }, [attachment("image", "pixel.png")])).not.toThrow();
 });

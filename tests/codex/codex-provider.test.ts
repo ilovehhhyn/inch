@@ -53,7 +53,7 @@ test("codex_provider_forwards_start_turn_with_context_first", async () => {
   fake.respond("model/list", MODEL_LIST);
   fake.respond("turn/start", { turn: { id: "turn-1" } });
 
-  const turnId = await provider.startTurn(THREAD_ID, { question: "does this look right?", context: CONTEXT, model: "gpt-5.6-sol", reasoning: "high" });
+  const turnId = await provider.startTurn(THREAD_ID, { question: "does this look right?", context: CONTEXT, model: "gpt-5.6-sol", reasoning: "high", attachments: [] });
 
   expect(turnId).toBe("turn-1");
   expect(sent()[1]?.params).toEqual({
@@ -72,7 +72,7 @@ test("a_turn_without_context_sends_only_the_question_through_the_provider", asyn
   fake.respond("model/list", MODEL_LIST);
   fake.respond("turn/start", { turn: { id: "turn-1" } });
 
-  await provider.startTurn(THREAD_ID, { question: "hello", context: null, model: "gpt-5.6-sol", reasoning: "medium" });
+  await provider.startTurn(THREAD_ID, { question: "hello", context: null, model: "gpt-5.6-sol", reasoning: "medium", attachments: [] });
 
   expect(sent()[1]?.params).toEqual({ threadId: "thread-1", input: [{ type: "text", text: "hello", text_elements: [] }], model: "gpt-5.6-sol", effort: "medium" });
 });
@@ -82,7 +82,7 @@ test("codex_turn_carries_model_and_effort", async () => {
   fake.respond("model/list", MODEL_LIST);
   fake.respond("turn/start", { turn: { id: "turn-1" } });
 
-  await provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "low" });
+  await provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "low", attachments: [] });
 
   expect(sent().map((message) => message.method)).toEqual(["model/list", "turn/start"]);
   expect(sent()[1]?.params).toMatchObject({ model: "gpt-5.6-luna", effort: "low" });
@@ -92,7 +92,7 @@ test("unknown_reasoning_value_is_rejected_before_sending", async () => {
   const { fake, provider, sent } = await setup();
   fake.respond("model/list", MODEL_LIST);
 
-  await expect(provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "turbo" })).rejects.toThrow(
+  await expect(provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "turbo", attachments: [] })).rejects.toThrow(
     "reasoning level `turbo` is not offered by `gpt-5.6-luna`; choose low or medium",
   );
 
@@ -123,7 +123,7 @@ test("a_turn_changes_the_model_a_restarted_server_resumes_the_thread_with", asyn
   fake.respond("model/list", MODEL_LIST);
   fake.respond("turn/start", { turn: { id: "turn-1" } });
 
-  await provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "low" });
+  await provider.startTurn(THREAD_ID, { question: "hi", context: null, model: "gpt-5.6-luna", reasoning: "low", attachments: [] });
 
   expect(client.modelOf(THREAD_ID)).toBe("gpt-5.6-luna");
 });

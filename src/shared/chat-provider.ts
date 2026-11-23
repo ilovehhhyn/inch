@@ -1,4 +1,5 @@
 // Defines the one interface both model providers implement, so the window and the IPC layer never name a provider's protocol.
+import type { Attachment } from "./attachment";
 import type { ScreenContext } from "./context-format";
 import type { ModelOption } from "./models";
 import type { ProviderId } from "./provider-id";
@@ -10,8 +11,11 @@ export type Unsubscribe = () => void;
 /** The signed-in state of one provider; `label` is a plan or method such as "ChatGPT Plus", "Claude Console" or "API key", never a key, a token or an email. */
 export type ProviderAccount = Readonly<{ provider: ProviderId; signedIn: boolean; label: string | null }>;
 
-/** `model` and `reasoning` must be one of `listModels()`; the provider rejects any other value before it sends anything. */
-export type TurnInput = Readonly<{ question: string; context: ScreenContext | null; model: string; reasoning: string }>;
+/**
+ * `model` and `reasoning` must be one of `listModels()`; the provider rejects any other value before it sends anything.
+ * `attachments` are Margin's stored copies, and reach the model before the context block, which reaches it before the question.
+ */
+export type TurnInput = Readonly<{ question: string; context: ScreenContext | null; model: string; reasoning: string; attachments: ReadonlyArray<Attachment> }>;
 
 export interface ChatProvider {
   readonly id: ProviderId;

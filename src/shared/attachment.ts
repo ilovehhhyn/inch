@@ -1,4 +1,5 @@
-// Describes a file attached to a message and decides, from its bytes and size alone, whether Margin accepts it.
+// Describes a file attached to a message, decides from its bytes and size whether Margin accepts it, and renders and parses the text a model reads.
+import type { ModelOption } from "./models";
 
 export type AttachmentKind = "image" | "pdf" | "text";
 
@@ -7,6 +8,9 @@ export type Attachment = Readonly<{ id: string; kind: AttachmentKind; name: stri
 
 /** The name and kind a message shows as a chip; it never carries the file's content. */
 export type AttachmentSummary = Readonly<{ name: string; kind: AttachmentKind }>;
+
+/** What the window knows of a file it attached: enough to draw a chip and to name the file in a send, never its path. */
+export type AttachmentChip = Readonly<AttachmentSummary & { id: string; bytes: number }>;
 
 /** The PDF limit is the Claude request limit (32 MB); the others keep a message well under it. */
 export const ATTACHMENT_LIMITS = { imageBytes: 20 * 1024 * 1024, pdfBytes: 32 * 1024 * 1024, textBytes: 1 * 1024 * 1024, perMessage: 10 } as const;
@@ -117,4 +121,35 @@ export interface AttachmentContent {
   readBase64(attachment: Attachment): Promise<string>;
   /** The text layer of a PDF, each page under a `[page N]` line; rejects for a PDF with no text. */
   extractPdfText(attachment: Attachment): Promise<string>;
+}
+
+const END_LINE = "END ATTACHMENT";
+/** A content line equal to the end line (after any backslashes) gets one more backslash, so the first bare end line is always the real one. */
+const NEEDS_ESCAPE = /^\\*END ATTACHMENT$/;
+
+/** The text of a text file, or of a PDF sent as text: the label line, the content, then the end line. */
+export function renderAttachmentText(kind: "text" | "pdf", name: string, content: string, isTextOnly: boolean): string {
+  const lines = content.split("\n").map((line) => (NEEDS_ESCAPE.test(line) ? `\\${line}` : line));
+  return [attachmentLabel(kind, name, isTextOnly), ...lines, END_LINE].join("\n");
+}
+
+/** Takes the attachment blocks off the front of stored user text and returns what they were and the text after them; a block with no end line is not one. */
+export function splitAttachmentBlocks(stored: string): Readonly<{ attachments: ReadonlyArray<AttachmentSummary>; rest: string }> {
+  const attachments: Array<AttachmentSummary> = [];
+  let lines = stored.split("\n");
+  for (;;) {
+    const summary = parseAttachmentLabel(lines[0] ?? "");
+    const endIndex = lines.indexOf(END_LINE);
+    if (summary === null || endIndex === -1) break;
+    attachments.push(summary);
+    const after = lines.slice(endIndex + 1);
+    lines = after[0] === "" ? after.slice(1) : after;
+  }
+  return { attachments, rest: lines.join("\n") };
+}
+
+/** Refuses an image for a model that reads text only; the check runs before anything is sent. */
+export function requireAttachmentsAccepted(model: ModelOption, attachments: ReadonlyArray<Attachment>): void {
+  const image = attachments.find((attachment) => attachment.kind === "image");
+  if (image !== undefined && !model.acceptsImages) throw new Error(`cannot send image \`${image.name}\` to \`${model.id}\`, which reads text only; choose a model that accepts images`);
 }

@@ -219,7 +219,7 @@ test("a_turn_with_context_sends_two_text_items_and_the_context_ends_with_a_blank
   const { fake, client, sent } = await setup();
   fake.respond("turn/start", { turn: { id: TURN_ID } });
 
-  const turnId = await client.startTurn(asThreadId(THREAD_ID), { question: "what is lr?", context: { text: "MARGIN SCREEN CONTEXT\nlr = 0.1" }, model: "gpt-5.6-sol", effort: "high" });
+  const turnId = await client.startTurn(asThreadId(THREAD_ID), { question: "what is lr?", context: { text: "MARGIN SCREEN CONTEXT\nlr = 0.1" }, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
 
   expect(turnId).toBe(TURN_ID);
   expect(sent()[0]?.params).toEqual({
@@ -237,15 +237,28 @@ test("a_turn_without_context_sends_only_the_question", async () => {
   const { fake, client, sent } = await setup();
   fake.respond("turn/start", { turn: { id: TURN_ID } });
 
-  await client.startTurn(asThreadId(THREAD_ID), { question: "hello", context: null, model: "gpt-5.6-sol", effort: "high" });
+  await client.startTurn(asThreadId(THREAD_ID), { question: "hello", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
 
   expect(sent()[0]?.params).toEqual({ threadId: THREAD_ID, input: [{ type: "text", text: "hello", text_elements: [] }], model: "gpt-5.6-sol", effort: "high" });
+});
+
+test("attachment_items_come_before_the_context_and_the_question", async () => {
+  const { fake, client, sent } = await setup();
+  fake.respond("turn/start", { turn: { id: TURN_ID } });
+
+  await client.startTurn(asThreadId(THREAD_ID), { question: "q", context: { text: "ctx" }, model: "gpt-5.6-sol", effort: "high", attachmentItems: [{ type: "localImage", path: "/stored/a.png" }] });
+
+  expect((sent()[0]?.params as { input: Array<unknown> }).input).toEqual([
+    { type: "localImage", path: "/stored/a.png" },
+    { type: "text", text: "ctx\n\n", text_elements: [] },
+    { type: "text", text: "q", text_elements: [] },
+  ]);
 });
 
 test("an_empty_question_is_rejected_before_any_request", async () => {
   const { client, sent } = await setup();
 
-  await expect(client.startTurn(asThreadId(THREAD_ID), { question: "  ", context: { text: "ctx" }, model: "gpt-5.6-sol", effort: "high" })).rejects.toThrow(/question must not be empty/);
+  await expect(client.startTurn(asThreadId(THREAD_ID), { question: "  ", context: { text: "ctx" }, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] })).rejects.toThrow(/question must not be empty/);
 
   expect(sent()).toEqual([]);
 });
@@ -266,7 +279,7 @@ test("a_thread_is_resumable_only_after_it_has_run_a_turn", async () => {
   const threadId = await client.startThread({ model: "gpt-5.6-sol" });
   expect(client.resumableThreads()).toEqual([]);
 
-  await client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high" });
+  await client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
 
   expect(client.resumableThreads()).toEqual([THREAD_ID]);
 });
@@ -277,7 +290,7 @@ test("the_client_tracks_the_active_turn_until_it_completes", async () => {
   fake.respond("turn/start", { turn: { id: TURN_ID } });
   const threadId = await client.startThread({ model: "gpt-5.6-sol" });
 
-  await client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high" });
+  await client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
   expect(client.activeTurns()).toEqual([{ threadId: THREAD_ID, turnId: TURN_ID }]);
   fake.emit(completed("completed"));
   await settle();
@@ -345,7 +358,7 @@ test("crash_during_turn_restarts_and_resumes_the_thread", async () => {
   const { supervisor, events } = startSupervisor([first, second]);
   await supervisor.start();
   const threadId = await supervisor.client.startThread({ model: "gpt-5.6-sol" });
-  await supervisor.client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high" });
+  await supervisor.client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
   first.emit({ method: "item/agentMessage/delta", params: { threadId: THREAD_ID, turnId: TURN_ID, itemId: "i", delta: "par" } });
   await settle();
 
@@ -366,14 +379,14 @@ test("after_a_restart_the_new_process_serves_requests_and_its_events_flow", asyn
   const { supervisor, events } = startSupervisor([first, second]);
   await supervisor.start();
   const threadId = await supervisor.client.startThread({ model: "gpt-5.6-sol" });
-  await supervisor.client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high" });
+  await supervisor.client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
   first.emit(completed("completed"));
   await settle();
   first.crash();
   await until(() => second.received().some((message) => message.method === "thread/resume"));
   await settle();
 
-  const turnId = await supervisor.client.startTurn(threadId, { question: "retry", context: null, model: "gpt-5.6-sol", effort: "high" });
+  const turnId = await supervisor.client.startTurn(threadId, { question: "retry", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
   second.emit({ method: "item/agentMessage/delta", params: { threadId: THREAD_ID, turnId: TURN_ID, itemId: "i", delta: "again" } });
   await settle();
 
@@ -388,7 +401,7 @@ test("a_crash_with_no_active_turn_emits_no_failure_event_and_resumes_threads_tha
   const { supervisor, events } = startSupervisor([first, second]);
   await supervisor.start();
   const threadId = await supervisor.client.startThread({ model: "gpt-5.6-sol" });
-  await supervisor.client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high" });
+  await supervisor.client.startTurn(threadId, { question: "hi", context: null, model: "gpt-5.6-sol", effort: "high", attachmentItems: [] });
   first.emit(completed("completed"));
   await settle();
 

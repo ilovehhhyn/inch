@@ -1,18 +1,31 @@
 // Converts a stored Codex thread into the messages and chat-list entry the window shows, without running anything.
+import { basename } from "node:path";
+
+import { splitAttachmentBlocks, type AttachmentSummary } from "../shared/attachment";
 import { CONTEXT_HEADER_LINE, splitContextBlock } from "../shared/context-format";
 import { asThreadId, asTurnId } from "../shared/provider-events";
 import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 import type { Thread } from "./generated/v2/Thread";
 import type { ThreadItem } from "./generated/v2/ThreadItem";
 import type { Turn } from "./generated/v2/Turn";
+import type { UserInput } from "./generated/v2/UserInput";
 
 const TITLE_MAX_CHARS = 60;
 const EMPTY_TITLE = "New chat";
 /** Answer items of one turn are separate paragraphs. */
 const ANSWER_SEPARATOR = "\n\n";
 
-function userText(items: ReadonlyArray<ThreadItem>): string {
-  return items.flatMap((item) => (item.type === "userMessage" ? item.content : [])).flatMap((input) => (input.type === "text" ? [input.text] : [])).join("");
+function userInputs(items: ReadonlyArray<ThreadItem>): ReadonlyArray<UserInput> {
+  return items.flatMap((item) => (item.type === "userMessage" ? item.content : []));
+}
+
+function userText(inputs: ReadonlyArray<UserInput>): string {
+  return inputs.flatMap((input) => (input.type === "text" ? [input.text] : [])).join("");
+}
+
+/** Images are items of their own; a stored image path ends with the file's own name. */
+function imageSummaries(inputs: ReadonlyArray<UserInput>): Array<AttachmentSummary> {
+  return inputs.flatMap((input): Array<AttachmentSummary> => (input.type === "localImage" ? [{ kind: "image", name: basename(input.path) }] : []));
 }
 
 function answerText(items: ReadonlyArray<ThreadItem>): string {
@@ -27,7 +40,10 @@ function questionOf(storedText: string): string {
 function turnMessages(turn: Turn): Array<DisplayMessage> {
   if (turn.status === "inProgress") throw new Error(`turn ${turn.id} is still in progress; wait for it to finish before opening the thread`);
   const turnId = asTurnId(turn.id);
-  const messages: Array<DisplayMessage> = [{ turnId, role: "user", text: questionOf(userText(turn.items)), status: "done" }];
+  const inputs = userInputs(turn.items);
+  const { attachments: textAttachments, rest } = splitAttachmentBlocks(userText(inputs));
+  const attachments = [...imageSummaries(inputs), ...textAttachments];
+  const messages: Array<DisplayMessage> = [{ turnId, role: "user", text: questionOf(rest), status: "done", ...(attachments.length === 0 ? {} : { attachments }) }];
   const answer = answerText(turn.items);
   if (answer !== "") messages.push({ turnId, role: "assistant", text: answer, status: turn.status === "failed" ? "failed" : "done" });
   return messages;

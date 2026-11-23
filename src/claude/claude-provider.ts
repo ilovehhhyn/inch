@@ -2,6 +2,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
 
+import { attachmentLabel, parseAttachmentLabel, renderAttachmentText, requireAttachmentsAccepted, type Attachment, type AttachmentContent, type AttachmentSummary } from "../shared/attachment";
 import type { ChatProvider, ProviderAccount, TurnInput } from "../shared/chat-provider";
 import { renderContextBlock } from "../shared/context-format";
 import { requireModelChoice, type ModelOption } from "../shared/models";
@@ -36,6 +37,8 @@ export type ClaudeProviderOptions = Readonly<{
   store: ClaudeThreadStore;
   makeClient?: (credential: ClaudeCredential) => Anthropic;
   clientOptions?: ClaudeClientOptions;
+  /** Reads attached files; required to send a turn that has attachments. */
+  content?: AttachmentContent;
   /** Makes the ids of threads and turns; random by default. */
   createId?: () => string;
 }>;
@@ -54,6 +57,42 @@ function questionOf(content: StoredMessage["content"]): string {
   if (typeof content === "string") return content;
   const texts = content.flatMap((block) => (block.type === "text" ? [block.text] : []));
   return texts.at(-1) ?? "";
+}
+
+const IMAGE_MEDIA_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+
+function requireImageMediaType(attachment: Attachment): (typeof IMAGE_MEDIA_TYPES)[number] {
+  const found = IMAGE_MEDIA_TYPES.find((mediaType) => mediaType === attachment.mediaType);
+  if (found === undefined) throw new Error(`image \`${attachment.name}\` has media type ${attachment.mediaType}; Claude reads ${IMAGE_MEDIA_TYPES.join(", ")}`);
+  return found;
+}
+
+/** A text file is one text block; an image or a PDF is a label block and then the base64 block, so a reopened chat can still name it. */
+async function attachmentBlocks(attachments: ReadonlyArray<Attachment>, content: AttachmentContent | undefined): Promise<Array<Anthropic.Beta.BetaContentBlockParam>> {
+  if (attachments.length === 0) return [];
+  if (content === undefined) throw new Error("the provider was created without an attachment reader; pass createAttachmentContent() when creating it");
+  const blocks: Array<Anthropic.Beta.BetaContentBlockParam> = [];
+  for (const attachment of attachments) {
+    if (attachment.kind === "text") {
+      blocks.push({ type: "text", text: renderAttachmentText("text", attachment.name, await content.readText(attachment), false) });
+      continue;
+    }
+    const data = await content.readBase64(attachment);
+    blocks.push({ type: "text", text: attachmentLabel(attachment.kind, attachment.name, false) });
+    if (attachment.kind === "image") blocks.push({ type: "image", source: { type: "base64", media_type: requireImageMediaType(attachment), data } });
+    else blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data } });
+  }
+  return blocks;
+}
+
+/** The attachments a stored user message names: every text block before the question that starts with a label line. */
+function attachmentsOf(content: StoredMessage["content"]): Array<AttachmentSummary> {
+  if (typeof content === "string") return [];
+  const texts = content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+  return texts.slice(0, -1).flatMap((text) => {
+    const summary = parseAttachmentLabel(text.split("\n")[0] ?? "");
+    return summary === null ? [] : [summary];
+  });
 }
 
 function titleOf(file: ClaudeThreadFile): string {
@@ -176,11 +215,16 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
     async startTurn(threadId: ThreadId, input: TurnInput) {
       if (input.question.trim() === "") throw new Error("question must not be empty");
       if (active.has(threadId)) throw new Error("a turn is already running in this chat; wait for the answer or stop it first");
-      requireModelChoice(CLAUDE_MODELS, { model: input.model, reasoning: input.reasoning });
+      const option = requireModelChoice(CLAUDE_MODELS, { model: input.model, reasoning: input.reasoning });
+      requireAttachmentsAccepted(option, input.attachments);
       const credential = await options.credentials();
       if (credential === null) throw new Error(NOT_SIGNED_IN);
       const file: ClaudeThreadFile = { ...(await load(threadId)), model: input.model, effort: parseClaudeEffort(input.reasoning) };
-      const content: Array<Anthropic.Beta.BetaTextBlockParam> = [...(input.context === null ? [] : [{ type: "text" as const, text: renderContextBlock(input.context) }]), { type: "text", text: input.question }];
+      const content: Array<Anthropic.Beta.BetaContentBlockParam> = [
+        ...(await attachmentBlocks(input.attachments, options.content)),
+        ...(input.context === null ? [] : [{ type: "text" as const, text: renderContextBlock(input.context) }]),
+        { type: "text", text: input.question },
+      ];
       const turn: ActiveTurn = { turnId: asTurnId(createId()), controller: new AbortController(), shownText: "", isInterrupted: false };
       active.set(threadId, turn);
       void runTurn(credential, file, { role: "user", content }, turn); // answers and failures reach the window as events; runTurn never rejects
@@ -199,7 +243,7 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
         const assistant = file.messages[turn.userMessageIndex + 1];
         if (user === undefined || assistant === undefined) throw new Error(`chat ${threadId} turn ${turn.turnId} points outside its messages; delete the chat's file to remove it`);
         return [
-          { turnId: turn.turnId, role: "user", text: questionOf(user.content), status: "done" },
+          { turnId: turn.turnId, role: "user", text: questionOf(user.content), status: "done", ...(attachmentsOf(user.content).length === 0 ? {} : { attachments: attachmentsOf(user.content) }) },
           { turnId: turn.turnId, role: "assistant", text: textOf(assistant.content), status: "done" },
         ];
       });
