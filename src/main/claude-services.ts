@@ -81,7 +81,16 @@ export function createClaudeServices(options: ClaudeServicesOptions): ClaudeServ
     async signOut() {
       cached = null;
       isRejected = false;
-      await signOut(options.store, await options.ant());
+      const hadKey = (await options.store.readApiKey("claude")) !== null;
+      await options.store.deleteApiKey("claude"); // first, so a failed `ant` lookup cannot keep a stored key
+      let ant: AntCli;
+      try {
+        ant = await options.ant();
+      } catch (error) {
+        if (hadKey) return; // a key user has no `ant` login to end, and the lookup needs the login shell
+        throw error;
+      }
+      await signOut(options.store, ant);
     },
     clientOptions: options.clientOptions,
   };

@@ -74,6 +74,23 @@ test("signing_out_clears_the_cached_token_so_the_account_reads_signed_out", asyn
   expect(ant.calls).toContain("logout");
 });
 
+test("an_api_key_user_signs_out_even_when_ant_cannot_be_found", async () => {
+  const lookupFailure = new Error("could not read the login-shell PATH");
+  const { store, signOut, signInApiKey } = services({ validate: async () => undefined, ant: async () => Promise.reject(lookupFailure) });
+  await signInApiKey("sk-ant-test-123");
+
+  await signOut();
+
+  expect(store.keys.has("claude")).toBe(false);
+});
+
+test("a_sign_out_with_no_stored_key_still_reports_a_failed_ant_lookup", async () => {
+  const lookupFailure = new Error("could not read the login-shell PATH");
+  const { signOut } = services({ ant: async () => Promise.reject(lookupFailure) });
+
+  await expect(signOut()).rejects.toThrow("could not read the login-shell PATH");
+});
+
 test("console_sign_in_reads_a_fresh_token_afterwards", async () => {
   const { ant, signInConsole, credentials } = services();
   ant.token = null;
