@@ -43,5 +43,5 @@ In the built app's window `speechSynthesis.getVoices()` returned 0 voices on the
 ## Not measured
 
 - Attachments to a Claude chat were never sent to Anthropic; the block shapes were checked against a mocked client and the bundled API reference.
-- A PDF sent to Codex was checked as extracted text in unit tests and in the packaged app (see the report), not against a real model.
+- A PDF sent to Codex was checked as extracted text in unit tests and in the packaged app (`dist/mac-arm64/Margin.app` against a scripted Codex, where `pdfjs-dist` resolved inside `app.asar`), not against a real model.
 - Real dictation by a person.
