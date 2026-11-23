@@ -19,6 +19,7 @@ function setup() {
     appVersion: "1.2.3",
     openExternal: async (url) => void opened.push(url),
     log: (line) => void logLines.push(line),
+    emptyWorkspacePath: "/Users/example/empty",
   });
   return { fake, client, opened, logLines };
 }

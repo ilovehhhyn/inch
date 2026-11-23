@@ -8,7 +8,7 @@ import { FakeAppServer } from "../fakes/fake-app-server";
 const INIT_RESULT = { userAgent: "codex/0.146.0", codexHome: "/Users/example/.codex", platformFamily: "unix", platformOs: "macos" };
 
 function options(fake: FakeAppServer, requestTimeoutMs = 30_000) {
-  return { codexPath: "/opt/homebrew/bin/codex", env: { HOME: "/Users/example" }, appVersion: "1.0.0", openExternal: async () => undefined, log: () => undefined, spawn: fake.spawn, requestTimeoutMs };
+  return { codexPath: "/opt/homebrew/bin/codex", env: { HOME: "/Users/example" }, appVersion: "1.0.0", openExternal: async () => undefined, log: () => undefined, emptyWorkspacePath: "/Users/example/empty", spawn: fake.spawn, requestTimeoutMs };
 }
 
 test("a_session_is_returned_after_initialize_and_initialized", async () => {

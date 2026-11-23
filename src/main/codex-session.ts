@@ -14,6 +14,7 @@ export type StartCodexSessionOptions = Readonly<{
   appVersion: string;
   openExternal: (url: string) => Promise<void>;
   log: Logger;
+  emptyWorkspacePath: string;
   spawn?: SpawnFunction;
   requestTimeoutMs?: number;
 }>;
@@ -25,7 +26,7 @@ export async function startCodexSession(options: StartCodexSessionOptions): Prom
     ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
     ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
   });
-  const client = new CodexClient({ connection: process.connection, appVersion: options.appVersion, openExternal: options.openExternal, log: options.log });
+  const client = new CodexClient({ connection: process.connection, appVersion: options.appVersion, openExternal: options.openExternal, log: options.log, emptyWorkspacePath: options.emptyWorkspacePath });
   try {
     await client.initialize();
   } catch (error) {
