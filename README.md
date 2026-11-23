@@ -9,7 +9,7 @@ Margin works with two providers. OpenAI chats run through the Codex app-server o
 ## Requirements
 
 - macOS 14 or later on Apple silicon.
-- `codex-cli 0.146.0`, installed with `npm install -g @openai/codex@0.146.0`. Margin refuses to start with any other version and says so in the window. This holds even if you only use Claude.
+- `codex-cli 0.146.0`, installed with `npm install -g @openai/codex@0.146.0`. With any other version, or none, OpenAI chats and sign-in are disabled and the window shows the install command with a Retry button. Claude chats keep working.
 - For OpenAI chats: an OpenAI account that Codex can use, either a ChatGPT plan or an OpenAI API key.
 - For Claude chats: an Anthropic API key, or a Claude Console account with the `ant` command installed (`brew install anthropics/tap/ant`).
 - For voice (optional): whisper.cpp, installed with `brew install whisper-cpp`, and its free `base.en` model, downloaded with `scripts/fetch-whisper-model.sh` (148 MB, checked against a pinned SHA-256). Without them Margin shows the install command the first time you dictate.
