@@ -1,5 +1,6 @@
 {
   "name": "margin",
+  "productName": "Margin",
   "version": "0.1.0",
   "private": true,
   "description": "Margin: a desktop chat app that sends the text you were reading with your question.",
