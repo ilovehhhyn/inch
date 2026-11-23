@@ -1,7 +1,7 @@
 // Finds the user's codex executable through the login-shell PATH and checks its version before anything starts it.
 import { execFile } from "node:child_process";
 import { access, constants } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 
 import { codexMissingError, INSTALL_COMMAND, parseCodexVersion, requireSupportedCodex } from "../codex/codex-version";
 import { StartupError } from "../shared/startup-error";
@@ -56,17 +56,7 @@ async function findOnPath(pathValue: string, services: StartupServices): Promise
   return undefined;
 }
 
-/** Returns the first `codex` on the login-shell PATH after checking its version; throws a StartupError otherwise. */
-export async function locateCodex(services: StartupServices = nodeStartupServices): Promise<LocatedCodex> {
-  let pathValue: string;
-  try {
-    pathValue = await services.readLoginShellPath();
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error);
-    throw missing(`could not read PATH from a login shell: ${cause}`);
-  }
-  const codexPath = await findOnPath(pathValue, services);
-  if (codexPath === undefined) throw codexMissingError();
+async function checkVersion(codexPath: string, services: StartupServices): Promise<string> {
   let output: string;
   try {
     output = await services.runCodexVersion(codexPath);
@@ -82,5 +72,32 @@ export async function locateCodex(services: StartupServices = nodeStartupService
     throw new StartupError({ kind: "codex-version", message: `${codexPath} --version ${cause}; reinstall it with \`${INSTALL_COMMAND}\``, fix: INSTALL_COMMAND });
   }
   requireSupportedCodex(version);
-  return { codexPath, version, loginShellPath: pathValue };
+  return version;
+}
+
+async function readPath(services: StartupServices): Promise<string> {
+  try {
+    return await services.readLoginShellPath();
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    throw missing(`could not read PATH from a login shell: ${cause}`);
+  }
+}
+
+async function requireOverride(override: string, services: StartupServices): Promise<void> {
+  if (!isAbsolute(override)) throw new StartupError({ kind: "codex-missing", message: `MARGIN_CODEX_PATH must be an absolute path, got \`${override}\`; unset it or give the full path`, fix: "unset MARGIN_CODEX_PATH" });
+  if (!(await services.isExecutable(override))) throw new StartupError({ kind: "codex-missing", message: `MARGIN_CODEX_PATH is \`${override}\`, which is not an executable file; fix the path or unset it`, fix: "unset MARGIN_CODEX_PATH" });
+}
+
+/**
+ * Returns the codex to run after checking its version; throws a StartupError otherwise. The first `codex` on the
+ * login-shell PATH is used, or `codexPathOverride` (the value of MARGIN_CODEX_PATH, which the end-to-end tests use to
+ * start a scripted stand-in); an override that cannot run is an error, never a reason to search the PATH.
+ */
+export async function locateCodex(services: StartupServices = nodeStartupServices, codexPathOverride?: string): Promise<LocatedCodex> {
+  if (codexPathOverride !== undefined) await requireOverride(codexPathOverride, services);
+  const pathValue = await readPath(services);
+  const codexPath = codexPathOverride ?? (await findOnPath(pathValue, services));
+  if (codexPath === undefined) throw codexMissingError();
+  return { codexPath, version: await checkVersion(codexPath, services), loginShellPath: pathValue };
 }

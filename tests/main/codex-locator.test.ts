@@ -107,3 +107,39 @@ test("an_unsupported_version_is_rejected_after_it_is_found", async () => {
   expect(error.info.kind).toBe("codex-version");
   expect(error.message).toContain("0.150.1");
 });
+
+test("an_override_path_is_used_instead_of_the_path_search_and_still_version_checked", async () => {
+  const services = fakeServices({ loginShellPath: "/usr/bin", executables: ["/usr/bin/codex", "/tmp/fake/codex"] });
+
+  const located = await locateCodex(services, "/tmp/fake/codex");
+
+  expect(located).toEqual({ codexPath: "/tmp/fake/codex", version: "0.146.0", loginShellPath: "/usr/bin" });
+  expect(services.versionRuns).toEqual(["/tmp/fake/codex"]);
+});
+
+test("a_relative_override_is_rejected_and_runs_nothing", async () => {
+  const services = fakeServices({ executables: ["codex"] });
+
+  const error = await startupErrorFrom(locateCodex(services, "codex"));
+
+  expect(error.info.kind).toBe("codex-missing");
+  expect(error.message).toBe("MARGIN_CODEX_PATH must be an absolute path, got `codex`; unset it or give the full path");
+  expect(services.versionRuns).toEqual([]);
+});
+
+test("an_override_that_is_not_executable_does_not_fall_back_to_the_path_search", async () => {
+  const services = fakeServices({ loginShellPath: "/usr/bin", executables: ["/usr/bin/codex"] });
+
+  const error = await startupErrorFrom(locateCodex(services, "/tmp/missing/codex"));
+
+  expect(error.message).toBe("MARGIN_CODEX_PATH is `/tmp/missing/codex`, which is not an executable file; fix the path or unset it");
+  expect(services.versionRuns).toEqual([]);
+});
+
+test("an_override_with_the_wrong_version_is_rejected", async () => {
+  const services = fakeServices({ executables: ["/tmp/fake/codex"], versionOutput: "codex-cli 0.1.0\n" });
+
+  const error = await startupErrorFrom(locateCodex(services, "/tmp/fake/codex"));
+
+  expect(error.info.kind).toBe("codex-version");
+});

@@ -11,7 +11,7 @@ import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import type { ProviderEvent } from "../shared/provider-events";
 import { StartupError, type StartupErrorInfo } from "../shared/startup-error";
 import { buildCodexEnvironment } from "./codex-environment";
-import { locateCodex } from "./codex-locator";
+import { locateCodex, nodeStartupServices } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
 import { runGitDiff } from "./git-diff";
 import { requireSavedDiffFolder } from "./ipc-arguments";
@@ -73,8 +73,15 @@ function layoutPath(): string {
   return join(app.getPath("userData"), "layout.json");
 }
 
+/** Read once at start-up: the end-to-end tests set it to start a scripted stand-in for Codex; an empty value is an error, not "unset". */
+function codexPathOverride(): string | undefined {
+  const value = process.env["MARGIN_CODEX_PATH"];
+  if (value === "") throw new StartupError({ kind: "codex-missing", message: "MARGIN_CODEX_PATH is set but empty; unset it or give the full path", fix: "unset MARGIN_CODEX_PATH" });
+  return value;
+}
+
 async function startCodex(): Promise<StartedCodex> {
-  const located = await locateCodex();
+  const located = await locateCodex(nodeStartupServices, codexPathOverride());
   const emptyWorkspacePath = await createEmptyWorkspace();
   const env = buildCodexEnvironment(process.env, located.loginShellPath);
   const supervisor = new CodexSupervisor({
