@@ -22,7 +22,7 @@ export type ComposerProps = Readonly<{
 function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null {
   const isComposing = event.nativeEvent.isComposing;
   if (isComposing) return null;
-  const isCommandI = event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === "i";
+  const isCommandI = event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "i";
   if (isCommandI) return "withContext";
   if (event.key === "Enter" && !event.shiftKey) return "plain";
   return null;

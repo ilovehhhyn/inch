@@ -12,3 +12,10 @@ export function parseContextText(value: unknown): string | null {
   if (parseContextBlock(value) === null) throw new Error("contextText must be a MARGIN SCREEN CONTEXT block; the window builds it with renderContextBlock");
   return value;
 }
+
+/** The window may read the diff only of the folder the user chose and Margin saved. */
+export function requireSavedDiffFolder(folder: string, saved: string | null): string {
+  if (saved === null) throw new Error("no diff folder has been chosen; choose one with the folder button first");
+  if (folder !== saved) throw new Error(`diff folder ${folder} is not the folder chosen in Margin (${saved}); choose it with the folder button`);
+  return folder;
+}

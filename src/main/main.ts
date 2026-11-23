@@ -14,6 +14,7 @@ import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
 import { runGitDiff } from "./git-diff";
+import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
 
@@ -123,7 +124,7 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
       const result = await (window === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options));
       return result.canceled ? null : (result.filePaths[0] ?? null);
     },
-    diffRead: (folder) => runGitDiff({ folder, base: "HEAD" }),
+    diffRead: async (folder) => runGitDiff({ folder: requireSavedDiffFolder(folder, (await readLayout(layoutPath())).diffFolder), base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
     turnStart: async (threadId, question, contextText) => (await readyClient()).startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),

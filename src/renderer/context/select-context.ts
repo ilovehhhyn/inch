@@ -2,7 +2,7 @@
 import { blockChars } from "../../shared/context-format";
 import type { VisibleBlock } from "./visible-blocks";
 
-/** About 3,000 tokens at four characters per token; Task 0 measured that this much context adds about one second to the first token. */
+/** The budget for the blocks only (label lines, text and line breaks); the three fixed lines of the block, about 60 characters plus the pane title, come on top. About 3,000 tokens at four characters per token; Task 0 measured that this much context adds about one second to the first token. */
 export const CONTEXT_BUDGET_CHARS = 12_000;
 
 const TRUNCATION_MARK = "…[truncated]";

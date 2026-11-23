@@ -112,3 +112,13 @@ test("text_typed_while_a_send_is_in_flight_is_kept_and_only_the_sent_text_is_cle
 
   expect(screen.getByLabelText("Message")).toHaveValue(" and more");
 });
+
+test("command_shift_i_does_not_send", async () => {
+  const sent: Array<Sent> = [];
+  render(<Harness sent={sent} />);
+
+  await userEvent.type(screen.getByLabelText("Message"), "q");
+  await userEvent.keyboard("{Meta>}{Shift>}i{/Shift}{/Meta}");
+
+  expect(sent).toEqual([]);
+});
