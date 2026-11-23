@@ -64,3 +64,22 @@ A turn with `input: [{ text: "CONTEXT-ITEM first" }, { text: "QUESTION-ITEM seco
 
 - Per-user MCP servers can run commands. A fix needs a list of the servers a user has (for example from `config/read` at start-up) and a per-thread `enabled: false` entry for each, or a dedicated `CODEX_HOME` with a copy of the login.
 - Latency has to be measured again with more turns before the context design is judged on speed.
+
+## Check of the built app with real Codex (2026-11-23, after the provider refactor)
+
+The built app was started against the real `codex-cli 0.146.0` (no scripted stand-in) and sent three real model turns, which is all the controller allowed. The turns were: Command-I on a code diff, a plain message in a side chat forked from that answer, and Command-I on the diff again.
+
+| Check | Result |
+| --- | --- |
+| Command-I on the diff pane (`warmup.diff`, 14 blocks, 861 characters) | The answer named `train.py` lines 36 to 41 and said line 39 was wrong. |
+| Side chat forked through the first answer, plain message | The side chat answered in its own pane (`//` is floor division). The fork, the thread open and the turn all went through the provider interface. |
+| Command-I on the diff a second time, asking for the line number | The answer was `train.py line 39`. |
+
+Latency of the two Command-I sends, from `metrics.jsonl` (time from the key press):
+
+| Send | `captureMs` | `turnStartAckMs` | `firstDeltaMs` |
+| --- | --- | --- | --- |
+| First, on a new thread | 0.6 | 217.7 | 3,275.5 |
+| Second | 0.3 | 9.5 | 1,547.6 |
+
+The planned measure was the median of 10 sends; only 2 were allowed, so no median is claimed. The context here was 861 characters, not the 12,000 of Task 0's gate, so these numbers do not test that gate. They agree in size with Task 0's medians (1,587 ms without context, 2,615 ms with 12,000 characters), and the first send includes the cold start of a new thread.
