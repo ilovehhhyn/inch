@@ -7,10 +7,11 @@ import type { ChatProvider, ProviderAccount, TurnInput } from "../shared/chat-pr
 import { renderContextBlock } from "../shared/context-format";
 import { requireModelChoice, type ModelOption } from "../shared/models";
 import { MARGIN_INSTRUCTIONS } from "../shared/margin-instructions";
-import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
+import { asThreadId, asTurnId, CLAUDE_SIGN_IN_EXPIRED, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 import { betasFor, claudeAccountOf, createClaudeClient, type ClaudeClientOptions, type ClaudeCredential } from "./claude-credentials";
-import { CLAUDE_EFFORTS, parseClaudeEffort, type ClaudeEffort, type ClaudeThreadFile, type ClaudeThreadStore, type StoredMessage } from "./claude-thread-store";
+import { contentForReplay } from "./replay-content";
+import { CLAUDE_EFFORTS, parseClaudeEffort, replayMessages, type ClaudeEffort, type ClaudeThreadFile, type ClaudeThreadStore, type StoredMessage } from "./claude-thread-store";
 
 export const CLAUDE_DEFAULT_MODEL = "claude-opus-5-5";
 /** Provisional: the plan picks the lower effort unless its answers are wrong on the latency probe, and the probe has not run (docs/spikes/claude.md). */
@@ -25,7 +26,6 @@ export const SERVER_SIDE_FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 export const NOT_SIGNED_IN = "Claude is not signed in; sign in from the Accounts page";
 export const STOPPED_BEFORE_ANY_ANSWER = "(stopped before any answer)";
-const SIGN_IN_EXPIRED = "Claude sign-in expired. Sign in again";
 const UNREACHABLE = "Cannot reach Anthropic. Check the connection";
 const REFUSED = "Claude declined to answer this";
 const TITLE_MAX_CHARS = 60;
@@ -37,6 +37,8 @@ export type ClaudeProviderOptions = Readonly<{
   store: ClaudeThreadStore;
   makeClient?: (credential: ClaudeCredential) => Anthropic;
   clientOptions?: ClaudeClientOptions;
+  /** Called when Anthropic rejects the credential, before the window is told, so the owner can mark the account signed out. */
+  onCredentialRejected?: () => void;
   /** Reads attached files; required to send a turn that has attachments. */
   content?: AttachmentContent;
   /** Makes the ids of threads and turns; random by default. */
@@ -45,7 +47,7 @@ export type ClaudeProviderOptions = Readonly<{
 
 type ActiveTurn = { readonly turnId: TurnId; readonly controller: AbortController; shownText: string; isInterrupted: boolean };
 
-type Outcome = Readonly<{ status: "completed" | "interrupted" | "refused"; error: string | null; content: Anthropic.Beta.BetaAssistantMessageParam["content"] }>;
+type Outcome = Readonly<{ status: "completed" | "interrupted" | "refused"; error: string | null; content: Anthropic.Beta.BetaAssistantMessageParam["content"]; servedBy: string | null }>;
 
 function textOf(content: StoredMessage["content"]): string {
   if (typeof content === "string") return content;
@@ -102,7 +104,7 @@ function titleOf(file: ClaudeThreadFile): string {
 }
 
 function describeFailure(error: unknown): Readonly<{ message: string; isAccountChange: boolean }> {
-  if (error instanceof Anthropic.AuthenticationError) return { message: SIGN_IN_EXPIRED, isAccountChange: true };
+  if (error instanceof Anthropic.AuthenticationError) return { message: CLAUDE_SIGN_IN_EXPIRED, isAccountChange: true };
   if (error instanceof Anthropic.RateLimitError) {
     const seconds = Number(error.headers.get("retry-after"));
     return { message: `Claude rate limit reached. Try again ${Number.isFinite(seconds) && seconds > 0 ? `in ${Math.ceil(seconds)} s` : "later"}`, isAccountChange: false };
@@ -135,7 +137,7 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
         model: file.model,
         max_tokens: CLAUDE_MAX_TOKENS,
         system: MARGIN_INSTRUCTIONS,
-        messages: [...file.messages, userMessage],
+        messages: [...replayMessages(file), userMessage],
         output_config: { effort: file.effort },
         betas: betasFor(credential, [SERVER_SIDE_FALLBACK_BETA]),
         fallbacks: "default",
@@ -150,16 +152,18 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
       }
     }
     const final = await request.finalMessage();
+    const servedBy = final.model === file.model ? null : final.model;
     if (final.stop_reason === "refusal") {
       const category = final.stop_details?.category ?? null;
-      return { status: "refused", error: category === null ? REFUSED : `${REFUSED} (category: ${category})`, content: final.content.length > 0 ? final.content : [{ type: "text", text: REFUSED }] };
+      const shown = turn.shownText === "" ? REFUSED : turn.shownText;
+      return { status: "refused", error: category === null ? REFUSED : `${REFUSED} (category: ${category})`, content: [{ type: "text", text: shown }], servedBy };
     }
-    return { status: "completed", error: null, content: final.content };
+    return { status: "completed", error: null, content: contentForReplay(final.content), servedBy };
   }
 
   /** The assistant message of a turn that ended early: the text already shown, else a marker, so user and assistant messages keep alternating. */
   function interruptedOutcome(turn: ActiveTurn): Outcome {
-    return { status: "interrupted", error: null, content: [{ type: "text", text: turn.shownText === "" ? STOPPED_BEFORE_ANY_ANSWER : turn.shownText }] };
+    return { status: "interrupted", error: null, content: [{ type: "text", text: turn.shownText === "" ? STOPPED_BEFORE_ANY_ANSWER : turn.shownText }], servedBy: null };
   }
 
   async function runTurn(credential: ClaudeCredential, file: ClaudeThreadFile, userMessage: Anthropic.Beta.BetaUserMessageParam, turn: ActiveTurn): Promise<void> {
@@ -175,13 +179,14 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
       const saved: ClaudeThreadFile = {
         ...file,
         messages: [...file.messages, userMessage, { role: "assistant", content: outcome.content }],
-        turns: [...file.turns, { turnId: turn.turnId, userMessageIndex: file.messages.length }],
+        turns: [...file.turns, { turnId: turn.turnId, userMessageIndex: file.messages.length, ...(outcome.servedBy === null ? {} : { servedBy: outcome.servedBy }), ...(outcome.status === "refused" ? { refused: true as const } : {}) }],
       };
       await options.store.write(saved);
       unsaved.delete(threadId);
-      emit({ type: "completed", threadId, turnId: turn.turnId, status: outcome.status, error: outcome.error });
+      emit({ type: "completed", threadId, turnId: turn.turnId, status: outcome.status, error: outcome.error, ...(outcome.servedBy === null ? {} : { servedBy: outcome.servedBy }) });
     } catch (error) {
       const { message, isAccountChange } = describeFailure(error);
+      if (isAccountChange) options.onCredentialRejected?.();
       emit({ type: "completed", threadId, turnId: turn.turnId, status: "failed", error: message });
       if (isAccountChange) emit({ type: "accountChanged", provider: "claude" });
     } finally {
@@ -244,7 +249,7 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
         if (user === undefined || assistant === undefined) throw new Error(`chat ${threadId} turn ${turn.turnId} points outside its messages; delete the chat's file to remove it`);
         return [
           { turnId: turn.turnId, role: "user", text: questionOf(user.content), status: "done", ...(attachmentsOf(user.content).length === 0 ? {} : { attachments: attachmentsOf(user.content) }) },
-          { turnId: turn.turnId, role: "assistant", text: textOf(assistant.content), status: "done" },
+          { turnId: turn.turnId, role: "assistant", text: textOf(assistant.content), status: turn.refused === true ? "failed" : "done", ...(turn.servedBy === undefined ? {} : { servedBy: turn.servedBy }) },
         ];
       });
     },

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-import { createClaudeThreadStore, type ClaudeThreadFile, type StoredMessage } from "../../src/claude/claude-thread-store";
+import { createClaudeThreadStore, replayMessages, type ClaudeThreadFile, type StoredMessage } from "../../src/claude/claude-thread-store";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 
 const THREAD = asThreadId("11111111-aaaa-bbbb-cccc-222222222222");
@@ -153,4 +153,30 @@ test("list_with_no_folder_yet_is_empty_and_one_bad_file_fails_the_list_naming_it
 
   await expect(createClaudeThreadStore(parent).list()).rejects.toThrow(join(parent, "broken.json"));
   expect(await readFile(join(parent, `${THREAD}.json`), "utf8")).toContain(THREAD);
+});
+
+test("a_turn_with_servedBy_and_refused_is_read_back_and_other_values_are_rejected", async () => {
+  const directory = await folder();
+  const store = createClaudeThreadStore(directory);
+  await store.write({ ...SAVED, turns: [{ turnId: asTurnId("turn-1"), userMessageIndex: 0, servedBy: "claude-opus-4-8", refused: true }] });
+
+  expect((await store.read(THREAD)).turns).toEqual([{ turnId: "turn-1", userMessageIndex: 0, servedBy: "claude-opus-4-8", refused: true }]);
+  for (const [turn, fragment] of [[{ servedBy: "" }, "servedBy"], [{ servedBy: 5 }, "servedBy"], [{ refused: false }, "refused"]] as const) {
+    await writeFile(join(directory, `${THREAD}.json`), JSON.stringify({ ...SAVED, turns: [{ turnId: "turn-1", userMessageIndex: 0, ...turn }] }));
+    await expect(store.read(THREAD)).rejects.toThrow(fragment);
+  }
+});
+
+test("replay_messages_leave_out_exactly_the_refused_turns_and_keep_the_alternation", () => {
+  const messages: Array<StoredMessage> = [0, 1, 2].flatMap((turn) => [
+    { role: "user" as const, content: [{ type: "text" as const, text: `q${turn}` }] },
+    { role: "assistant" as const, content: [{ type: "text" as const, text: `a${turn}` }] },
+  ]);
+  const turns = [0, 1, 2].map((turn) => ({ turnId: asTurnId(`t${turn}`), userMessageIndex: turn * 2, ...(turn === 1 ? { refused: true as const } : {}) }));
+
+  const replayed = replayMessages({ ...SAVED, messages, turns });
+
+  expect(replayed.map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  expect(JSON.stringify(replayed)).not.toContain("q1");
+  expect(replayMessages({ ...SAVED, messages, turns: turns.map((turn) => ({ turnId: turn.turnId, userMessageIndex: turn.userMessageIndex })) })).toHaveLength(6);
 });

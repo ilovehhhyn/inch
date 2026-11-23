@@ -11,6 +11,8 @@ export type DisplayMessage = Readonly<{
   status: "done" | "failed";
   /** The files the user attached to this question, present only on a user message that had some. */
   attachments?: ReadonlyArray<AttachmentSummary>;
+  /** The model that wrote this answer when it is not the model the chat asked for (a server-side fallback); absent otherwise. */
+  servedBy?: string;
 }>;
 
 export type ThreadSummary = Readonly<{ id: ThreadId; provider: ProviderId; title: string; updatedAtSec: number }>;

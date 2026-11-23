@@ -19,11 +19,11 @@ const CONTEXT: ScreenContext = { paneKind: "diff", paneTitle: "repo", blocks: [{
 
 type Setup = Readonly<{ provider: ChatProvider; store: ClaudeThreadStore; fake: FakeAnthropic; events: Array<ProviderEvent> }>;
 
-async function setup(credential: ClaudeCredential | null = API_KEY): Promise<Setup> {
+async function setup(credential: ClaudeCredential | null = API_KEY, onCredentialRejected: () => void = () => undefined): Promise<Setup> {
   const store = createClaudeThreadStore(join(await mkdtemp(join(tmpdir(), "margin-claude-")), "claude-threads"));
   const fake = new FakeAnthropic();
   let counter = 0;
-  const provider = createClaudeProvider({ credentials: async () => credential, store, makeClient: () => fake.asClient(), createId: () => `id-${++counter}` });
+  const provider = createClaudeProvider({ credentials: async () => credential, store, makeClient: () => fake.asClient(), createId: () => `id-${++counter}`, onCredentialRejected });
   const events: Array<ProviderEvent> = [];
   provider.onEvent((event) => events.push(event));
   return { provider, store, fake, events };
@@ -448,4 +448,123 @@ test("list_models_offers_opus_with_all_five_levels_images_and_pdfs", async () =>
   expect(await context.provider.listModels()).toEqual([
     { provider: "claude", id: "claude-opus-5-5", label: "Claude Opus 5.5", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], defaultReasoning: CLAUDE_DEFAULT_EFFORT, acceptsImages: true, acceptsPdfs: true },
   ]);
+});
+
+const FALLBACK = { type: "fallback", from: { model: "claude-opus-5-5" }, to: { model: "claude-opus-4-8" }, trigger: null };
+
+test("a_turn_with_a_fallback_block_is_stored_without_the_thinking_and_tool_blocks_before_it", async () => {
+  const context = await setup();
+  const content = [
+    { type: "thinking", thinking: "", signature: "sig-before" },
+    { type: "text", text: "partial ", citations: null },
+    { type: "redacted_thinking", data: "x" },
+    { type: "tool_use", id: "t1", name: "x", input: {} },
+    FALLBACK,
+    { type: "thinking", thinking: "", signature: "sig-after" },
+    { type: "text", text: "final answer", citations: null },
+  ];
+  context.fake.script({ kind: "answer", chunks: ["partial final answer"], content, servedModel: "claude-opus-4-8" }, { kind: "answer", chunks: ["next"] });
+  const threadId = await context.provider.startThread();
+
+  await runTurn(context, threadId, "first");
+  await runTurn(context, threadId, "second");
+
+  const replayed = (context.fake.requests[1]?.params["messages"] as Array<{ role: string; content: Array<{ type: string }> }>)[1];
+  expect(replayed?.content.map((block) => block.type)).toEqual(["text", "fallback", "thinking", "text"]);
+  expect((await context.store.read(threadId)).messages[1]?.content).toEqual([content[1], FALLBACK, content[5], content[6]]);
+});
+
+test("a_turn_without_a_fallback_block_is_stored_unchanged", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["Hi"] });
+  const threadId = await context.provider.startThread();
+
+  await runTurn(context, threadId, "first");
+
+  expect((await context.store.read(threadId)).messages[1]?.content).toEqual(answerContent(["Hi"]));
+});
+
+test("a_refused_turn_is_kept_for_display_but_never_sent_again", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["partial text"], stopReason: "refusal", category: "cyber" }, { kind: "answer", chunks: ["fine"] });
+  const threadId = await context.provider.startThread();
+  await runTurn(context, threadId, "something that is declined");
+
+  const history = await context.provider.readThread(threadId);
+  await runTurn(context, threadId, "a harmless question");
+
+  expect(history.map((message) => [message.role, message.status])).toEqual([["user", "done"], ["assistant", "failed"]]);
+  expect(history[1]?.text).toBe("partial text");
+  expect(context.fake.requests[1]?.params["messages"]).toEqual([{ role: "user", content: [{ type: "text", text: "a harmless question" }] }]);
+  const stored = await context.store.read(threadId);
+  expect(stored.messages).toHaveLength(4);
+  expect((await context.provider.readThread(threadId)).map((message) => message.text)).toEqual(["something that is declined", "partial text", "a harmless question", "fine"]);
+});
+
+test("a_refusal_with_no_text_shows_the_decline_message_after_a_reload", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: [], stopReason: "refusal", category: null, emptyContent: true });
+  const threadId = await context.provider.startThread();
+  await runTurn(context, threadId, "something");
+
+  expect((await context.provider.readThread(threadId))[1]).toMatchObject({ status: "failed", text: "Claude declined to answer this" });
+});
+
+test("a_side_chat_forked_after_a_refused_turn_does_not_replay_it_either", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["x"], stopReason: "refusal", category: "cyber" }, { kind: "answer", chunks: ["ok1"] }, { kind: "answer", chunks: ["ok2"] });
+  const threadId = await context.provider.startThread();
+  await runTurn(context, threadId, "declined");
+  const secondTurn = await runTurn(context, threadId, "fine");
+  const forkId = await context.provider.forkThread(threadId, secondTurn);
+
+  await runTurn(context, forkId, "in the side chat");
+
+  expect((context.fake.requests[2]?.params["messages"] as Array<unknown>).length).toBe(3);
+});
+
+test("an_answer_served_by_another_model_is_reported_and_stored_with_the_turn", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["Hi"], servedModel: "claude-opus-4-8" });
+  const threadId = await context.provider.startThread();
+
+  const turnId = await runTurn(context, threadId, "hello");
+
+  expect(completedEvents(context.events)).toEqual([{ type: "completed", threadId, turnId, status: "completed", error: null, servedBy: "claude-opus-4-8" }]);
+  expect((await context.store.read(threadId)).turns[0]).toEqual({ turnId, userMessageIndex: 0, servedBy: "claude-opus-4-8" });
+  expect((await context.provider.readThread(threadId))[1]).toMatchObject({ role: "assistant", servedBy: "claude-opus-4-8" });
+});
+
+test("an_answer_served_by_the_chats_own_model_carries_no_served_by", async () => {
+  const context = await setup();
+  context.fake.script({ kind: "answer", chunks: ["Hi"] });
+  const threadId = await context.provider.startThread();
+
+  const turnId = await runTurn(context, threadId, "hello");
+
+  expect(completedEvents(context.events)).toEqual([{ type: "completed", threadId, turnId, status: "completed", error: null }]);
+  expect((await context.provider.readThread(threadId))[1]).not.toHaveProperty("servedBy");
+});
+
+test("a_rejected_credential_is_reported_to_the_owner_before_the_window_is_told", async () => {
+  const order: Array<string> = [];
+  const context = await setup(API_KEY, () => order.push("rejected"));
+  context.provider.onEvent((event) => order.push(event.type));
+  context.fake.script({ kind: "fail", error: Anthropic.APIError.generate(401, { type: "error", error: { type: "authentication_error", message: "invalid" } }, "401 invalid", new Headers()) });
+  const threadId = await context.provider.startThread();
+
+  await runTurn(context, threadId, "hello");
+
+  expect(order).toEqual(["rejected", "completed", "accountChanged"]);
+});
+
+test("another_error_does_not_report_a_rejected_credential", async () => {
+  const order: Array<string> = [];
+  const context = await setup(API_KEY, () => order.push("rejected"));
+  context.fake.script({ kind: "fail", error: new Anthropic.APIConnectionError({ message: "fetch failed" }) });
+  const threadId = await context.provider.startThread();
+
+  await runTurn(context, threadId, "hello");
+
+  expect(order).toEqual([]);
 });

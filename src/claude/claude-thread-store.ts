@@ -20,7 +20,11 @@ export function parseClaudeEffort(value: unknown): ClaudeEffort {
 /** A stored message is the user's or the assistant's; the beta endpoint's system messages are never stored. */
 export type StoredMessage = Anthropic.Beta.BetaUserMessageParam | Anthropic.Beta.BetaAssistantMessageParam;
 
-export type TurnRecord = Readonly<{ turnId: TurnId; userMessageIndex: number }>;
+/**
+ * `servedBy` names the model that wrote the answer when it differs from the chat's model. `refused` marks a turn that
+ * Claude declined: it stays in the file so the window can show it, and is never sent again (see `replayMessages`).
+ */
+export type TurnRecord = Readonly<{ turnId: TurnId; userMessageIndex: number; servedBy?: string; refused?: true }>;
 
 /**
  * One chat. `messages` alternate user and assistant, starting with a user message, and a turn `t` owns
@@ -51,7 +55,7 @@ export type ClaudeThreadStore = Readonly<{
 export type ThreadStoreIo = Readonly<{ rename: (from: string, to: string) => Promise<void> }>;
 
 const FILE_KEYS: ReadonlyArray<string> = ["version", "threadId", "forkedFrom", "model", "effort", "messages", "turns"];
-const TURN_KEYS: ReadonlyArray<string> = ["turnId", "userMessageIndex"];
+const TURN_KEYS: ReadonlyArray<string> = ["turnId", "userMessageIndex", "servedBy", "refused"];
 const SAFE_THREAD_ID = /^[A-Za-z0-9-]+$/;
 const EXTENSION = ".json";
 
@@ -98,7 +102,17 @@ function parseTurn(value: unknown, messages: ReadonlyArray<StoredMessage>, sourc
   const index = value["userMessageIndex"];
   const isPair = typeof index === "number" && Number.isInteger(index) && messages[index]?.role === "user" && messages[index + 1]?.role === "assistant";
   if (!isPair) throw invalid(source, `has a turn whose userMessageIndex ${JSON.stringify(index)} is not a user message followed by an assistant message`);
-  return { turnId: asTurnId(requireText(value["turnId"], source, "turnId")), userMessageIndex: index };
+  const servedBy = value["servedBy"];
+  if (servedBy !== undefined && (typeof servedBy !== "string" || servedBy === "")) throw invalid(source, "has a turn whose servedBy is not a non-empty string; delete the file to remove this chat");
+  const refused = value["refused"];
+  if (refused !== undefined && refused !== true) throw invalid(source, "has a turn whose refused is not true; delete the file to remove this chat");
+  return { turnId: asTurnId(requireText(value["turnId"], source, "turnId")), userMessageIndex: index, ...(servedBy === undefined ? {} : { servedBy }), ...(refused === undefined ? {} : { refused }) };
+}
+
+/** The messages to send back to the API: every turn except the refused ones, each as its user message and the answer after it, so the two roles still alternate. */
+export function replayMessages(file: ClaudeThreadFile): Array<StoredMessage> {
+  const refused = new Set(file.turns.filter((turn) => turn.refused === true).flatMap((turn) => [turn.userMessageIndex, turn.userMessageIndex + 1]));
+  return file.messages.filter((_, index) => !refused.has(index));
 }
 
 /** Parses untrusted data into a ClaudeThreadFile; `source` is the file path, and `expectedId` the id its name promises. */

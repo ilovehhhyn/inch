@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 const TICK = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export type StreamScript =
-  | Readonly<{ kind: "answer"; chunks: ReadonlyArray<string>; stopReason?: "end_turn" | "refusal" | "max_tokens"; category?: string | null; emptyContent?: boolean }>
+  | Readonly<{ kind: "answer"; chunks: ReadonlyArray<string>; stopReason?: "end_turn" | "refusal" | "max_tokens"; category?: string | null; emptyContent?: boolean; content?: ReadonlyArray<unknown>; servedModel?: string }>
   | Readonly<{ kind: "fail"; error: Error; chunksBefore?: ReadonlyArray<string> }>
   | Readonly<{ kind: "hang"; chunksBefore?: ReadonlyArray<string> }>;
 
@@ -51,13 +51,13 @@ class FakeStream {
 
   async finalMessage(): Promise<unknown> {
     if (this.script.kind !== "answer") throw new Error("the fake has a final message only for an answer script");
-    const { chunks, stopReason = "end_turn", category = null, emptyContent = false } = this.script;
+    const { chunks, stopReason = "end_turn", category = null, emptyContent = false, content, servedModel = "claude-opus-5-5" } = this.script;
     return {
       id: "msg_fake",
       type: "message",
       role: "assistant",
-      model: "claude-opus-5-5",
-      content: emptyContent ? [] : answerContent(chunks),
+      model: servedModel,
+      content: content !== undefined ? content : emptyContent ? [] : answerContent(chunks),
       stop_reason: stopReason,
       stop_sequence: null,
       stop_details: stopReason === "refusal" ? { type: "refusal", category, explanation: null } : null,
