@@ -5,7 +5,7 @@ import type { ThreadId, TurnId } from "../../shared/provider-events";
 import type { PaneId } from "../context/pane-id";
 import { registerPane } from "../context/pane-registry";
 import type { ScrollTracker } from "../context/scroll-tracker";
-import { readVisibleBlocks } from "../context/visible-blocks";
+import { readVisibleBlocks, visibleHeight } from "../context/visible-blocks";
 import type { ThreadStore } from "../state/thread-store";
 import { Message } from "./Message";
 
@@ -61,7 +61,7 @@ export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpe
   useLayoutEffect(() => {
     const container = element.current;
     if (container === null) throw new Error("the scroll container must be mounted before the pane registers");
-    const unregister = registerPane(paneId, () => readVisibleBlocks(container), "chat", { title: () => titleRef.current, viewportHeight: () => container.getBoundingClientRect().height });
+    const unregister = registerPane(paneId, () => readVisibleBlocks(container), "chat", { title: () => titleRef.current, viewportHeight: () => visibleHeight(container) });
     const detach = tracker.attach(paneId, container);
     return () => {
       detach();
@@ -104,6 +104,7 @@ export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpe
           )}
         </div>
       </div>
+      <div className="pane-fade" data-context-occluder="" aria-hidden="true" />
       {children}
     </section>
   );

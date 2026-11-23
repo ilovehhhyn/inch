@@ -52,7 +52,7 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
   }
 
   return (
-    <div className="composer">
+    <div className="composer" data-context-occluder="">
       <textarea
         aria-label={label}
         className="composer-input"

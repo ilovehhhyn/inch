@@ -8,6 +8,7 @@ export type VisibleBlock = Readonly<{ text: string; label: string; top: number; 
 
 const BLOCK_SELECTOR = "[data-context-block]";
 const HEADING_SELECTOR = "[data-context-heading]";
+const OCCLUDER_SELECTOR = "[data-context-occluder]";
 const SCOPE_SELECTOR = "[data-context-scope]";
 
 function oneLine(text: string): string {
@@ -46,9 +47,32 @@ function isNested(block: Element, container: HTMLElement): boolean {
   return outer !== null && container.contains(outer);
 }
 
-/** Returns the `data-context-block` elements whose rectangles intersect the container's visible rectangle, in document order. */
-export function readVisibleBlocks(container: HTMLElement): ReadonlyArray<VisibleBlock> {
+/**
+ * The part of the container the user can see: its scroll view minus the area that overlays (the composer and the fade)
+ * cover. Overlays are the `data-context-occluder` elements of the same pane; the first one that reaches into the view
+ * cuts everything below its top edge.
+ */
+function visibleRegion(container: HTMLElement): Readonly<{ top: number; bottom: number }> {
   const view = container.getBoundingClientRect();
+  let bottom = view.bottom;
+  for (const occluder of container.closest("[data-pane-id]")?.querySelectorAll(OCCLUDER_SELECTOR) ?? []) {
+    const rectangle = occluder.getBoundingClientRect();
+    const isEmpty = rectangle.bottom <= rectangle.top;
+    const reachesIntoView = rectangle.bottom > view.top && rectangle.top < view.bottom;
+    if (!isEmpty && reachesIntoView) bottom = Math.min(bottom, Math.max(rectangle.top, view.top));
+  }
+  return { top: view.top, bottom };
+}
+
+/** The height that block positions are weighted against: the unoccluded height of the view. */
+export function visibleHeight(container: HTMLElement): number {
+  const { top, bottom } = visibleRegion(container);
+  return bottom - top;
+}
+
+/** Returns the `data-context-block` elements whose rectangles intersect the visible region of the container, in document order. */
+export function readVisibleBlocks(container: HTMLElement): ReadonlyArray<VisibleBlock> {
+  const view = visibleRegion(container);
   const found: Array<VisibleBlock> = [];
   for (const block of container.querySelectorAll(BLOCK_SELECTOR)) {
     const rectangle = block.getBoundingClientRect();

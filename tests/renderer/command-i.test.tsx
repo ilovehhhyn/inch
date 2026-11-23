@@ -149,3 +149,24 @@ test("a_message_sent_with_context_resets_the_scrolled_pane_for_the_next_message"
   await waitFor(() => expect(api.turnStarts).toHaveLength(2));
   expect(api.turnStarts[1]?.contextText).toContain("--- message 1 (user)\nquestion 1");
 });
+
+test("text_under_the_composer_and_fade_is_not_sent_as_visible", async () => {
+  const api = new FakeMarginApi();
+  api.threads = [{ id: OLD, title: "Fine-tuning plan", updatedAtSec: 5 }];
+  api.histories.set(OLD, [1, 2, 3, 4, 5].flatMap((n) => [
+    { turnId: asTurnId(`t${n}`), role: "user" as const, text: `question ${n}`, status: "done" as const },
+    { turnId: asTurnId(`t${n}`), role: "assistant" as const, text: `answer ${n}`, status: "done" as const },
+  ]));
+  render(<App api={api} />);
+  await userEvent.click(await screen.findByRole("button", { name: "Fine-tuning plan" }));
+  await screen.findByText("answer 5");
+
+  await userEvent.type(screen.getByLabelText("Message"), "what is this?");
+  await userEvent.keyboard(COMMAND_I);
+
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  const sent = api.turnStarts[0]?.contextText ?? "";
+  expect(sent).toContain("--- message 7 (user)\nquestion 4");
+  expect(sent).not.toContain("message 8 (assistant)");
+  expect(sent).not.toContain("answer 5");
+});

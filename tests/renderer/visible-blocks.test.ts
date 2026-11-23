@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import { asPaneId } from "../../src/renderer/context/pane-id";
 import { readPane, registerPane } from "../../src/renderer/context/pane-registry";
-import { readVisibleBlocks, MAX_LABEL_CHARS } from "../../src/renderer/context/visible-blocks";
+import { readVisibleBlocks, visibleHeight, MAX_LABEL_CHARS } from "../../src/renderer/context/visible-blocks";
 
 const VIEW = { top: 100, bottom: 500 };
 
@@ -149,4 +149,52 @@ test("registering_the_same_pane_twice_is_rejected_because_two_readers_would_disa
   expect(() => registerPane(id, () => [], "chat", details)).toThrow(/already registered/);
 
   unregister();
+});
+
+function paneWithOccluders(blocks: Array<Element>, occluderTops: ReadonlyArray<number>): HTMLElement {
+  const section = document.createElement("section");
+  section.setAttribute("data-pane-id", "main");
+  const container = pane(...blocks);
+  section.append(container);
+  for (const top of occluderTops) {
+    const occluder = document.createElement("div");
+    occluder.setAttribute("data-context-occluder", "");
+    place(occluder, top, 600);
+    section.append(occluder);
+  }
+  return container;
+}
+
+test("blocks_under_an_overlay_are_not_visible_and_a_straddling_block_is_clipped_at_the_overlay", () => {
+  const container = paneWithOccluders([block("clear", "a", 120, 200), block("straddles", "b", 350, 450), block("hidden", "c", 420, 480)], [400]);
+
+  expect(readVisibleBlocks(container)).toEqual([
+    { text: "clear", label: "a", top: 20, bottom: 100 },
+    { text: "straddles", label: "b", top: 250, bottom: 300 },
+  ]);
+});
+
+test("the_height_used_for_weighting_is_the_unoccluded_height", () => {
+  expect(visibleHeight(paneWithOccluders([], [400]))).toBe(300);
+  expect(visibleHeight(paneWithOccluders([], [400, 450, 480]))).toBe(300);
+  expect(visibleHeight(paneWithOccluders([], []))).toBe(400);
+});
+
+test("an_overlay_that_does_not_reach_into_the_view_changes_nothing", () => {
+  const container = paneWithOccluders([block("x", "a", 450, 490)], [500, 700]);
+
+  expect(readVisibleBlocks(container)).toHaveLength(1);
+  expect(visibleHeight(container)).toBe(400);
+});
+
+test("an_overlay_with_no_size_is_ignored", () => {
+  const section = document.createElement("section");
+  section.setAttribute("data-pane-id", "main");
+  const container = pane(block("x", "a", 450, 490));
+  const empty = document.createElement("div");
+  empty.setAttribute("data-context-occluder", "");
+  place(empty, 0, 0);
+  section.append(container, empty);
+
+  expect(visibleHeight(container)).toBe(400);
 });

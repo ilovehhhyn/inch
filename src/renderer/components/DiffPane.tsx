@@ -5,7 +5,7 @@ import { DIFF_MAX_BYTES } from "../../shared/diff-limits";
 import type { PaneId } from "../context/pane-id";
 import { registerPane } from "../context/pane-registry";
 import type { ScrollTracker } from "../context/scroll-tracker";
-import { readVisibleBlocks } from "../context/visible-blocks";
+import { readVisibleBlocks, visibleHeight } from "../context/visible-blocks";
 import { parseUnifiedDiff, type DiffRow } from "../diff/parse-unified-diff";
 
 export type DiffPaneProps = Readonly<{
@@ -74,7 +74,7 @@ export function DiffPane({ paneId, tracker, folder, loadDiff, onChooseFolder }: 
     if (container === null) throw new Error("the scroll container must be mounted before the pane registers");
     const unregister = registerPane(paneId, () => readVisibleBlocks(container), "diff", {
       title: () => (folderRef.current === null ? "no folder chosen" : folderName(folderRef.current)),
-      viewportHeight: () => container.getBoundingClientRect().height,
+      viewportHeight: () => visibleHeight(container),
     });
     const detach = tracker.attach(paneId, container);
     return () => {
