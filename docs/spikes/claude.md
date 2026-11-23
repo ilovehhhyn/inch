@@ -10,6 +10,7 @@ This note records what is known about Claude's delay and about passing an `ant` 
 | Whether an `ant` token passed as `authToken` needs the `anthropic-beta: oauth-2025-04-20` header through the SDK | Not measured live | The `ant` CLI is not installed on this machine (`which ant` printed `ant not found`). |
 | The version of `ant` that works | Not measured | Same reason. Margin pins no `ant` version. |
 | Whether `claude-opus-5-5` at effort `low` answers `Reply with the single word OK.` correctly | Not measured | No request was sent. |
+| `firstDeltaMs` of a real Claude Command-I question about `warmup.diff` (Task 19, step 5) | Not measured | No request was sent. The end-to-end test shows only that the context reaches a fake service. |
 
 The first-token delay for Claude therefore has no number, and the comparison with the Codex numbers in `codex-app-server.md` cannot be made.
 
