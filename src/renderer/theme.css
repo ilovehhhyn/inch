@@ -388,3 +388,17 @@ code {
 .side-chats .chat-pane {
   border-bottom: 1px solid var(--app-line);
 }
+.thread-error-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.retry-button {
+  all: unset;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px 12px;
+  border: 1px solid var(--composer-border);
+  border-radius: 14px;
+  color: var(--ink);
+}

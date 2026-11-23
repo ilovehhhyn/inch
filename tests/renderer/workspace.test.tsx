@@ -2,11 +2,12 @@
 // Invariant: Enter sends the question as a plain turn on a thread the window starts when needed, and streamed text appears in that thread.
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 
 import { App } from "../../src/renderer/app";
 import { asThreadId, asTurnId } from "../../src/shared/provider-events";
 import { FakeMarginApi } from "../fakes/fake-margin-api";
+import { installFakeLayout } from "../fakes/fake-layout";
 
 const THREAD = asThreadId("thread-1");
 
@@ -97,4 +98,48 @@ test("new_chat_clears_the_main_pane_and_the_next_message_starts_another_thread",
   await typeAndSend("fresh");
 
   await waitFor(() => expect(api.turnStarts[1]?.threadId).toBe("thread-2"));
+});
+
+const CRASH = "Codex stopped unexpectedly. Retry";
+
+test("a_crashed_turn_shows_a_retry_button_that_resends_the_same_question_with_the_same_context", async () => {
+  const restoreLayout = installFakeLayout();
+  onTestFinished(restoreLayout);
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+  await userEvent.type(await screen.findByLabelText("Message"), "what is lr?");
+  await userEvent.keyboard("{Meta>}i{/Meta}");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => api.emitProvider({ type: "completed", threadId: THREAD, turnId: asTurnId("turn-1"), status: "failed", error: CRASH }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(CRASH);
+
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+  await waitFor(() => expect(api.turnStarts).toHaveLength(2));
+  expect(api.turnStarts[1]).toEqual(api.turnStarts[0]);
+  expect(api.turnStarts[0]?.contextText).toContain("MARGIN SCREEN CONTEXT v1");
+  expect(screen.queryByRole("alert")).toBeNull();
+  act(() => api.emitProvider({ type: "delta", threadId: THREAD, turnId: asTurnId("turn-2"), text: "The step size." }));
+  expect(await screen.findByText("The step size.")).toBeInTheDocument();
+});
+
+test("a_chat_with_no_failure_has_no_retry_button", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+  await userEvent.type(await screen.findByLabelText("Message"), "q{Enter}");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+test("retry_is_refused_while_another_answer_is_streaming", async () => {
+  const api = new FakeMarginApi();
+  render(<App api={api} />);
+  await userEvent.type(await screen.findByLabelText("Message"), "q{Enter}");
+  await waitFor(() => expect(api.turnStarts).toHaveLength(1));
+  act(() => api.emitProvider({ type: "completed", threadId: THREAD, turnId: asTurnId("turn-1"), status: "failed", error: CRASH }));
+  await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(api.turnStarts).toHaveLength(2));
+
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 });

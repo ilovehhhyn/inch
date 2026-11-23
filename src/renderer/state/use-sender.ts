@@ -1,5 +1,5 @@
 // Sends a question to a thread: reads the screen context when asked, starts the thread when needed, and tracks which threads are mid-send.
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { MarginApi } from "../../shared/ipc-contract";
 import type { ThreadId } from "../../shared/provider-events";
@@ -32,10 +32,15 @@ function contextFor(mode: SendMode, tracker: ScrollTracker): string | null {
 export type Sender = Readonly<{
   /** Sends in `threadId`, or in a new thread when null; `onThreadStarted` receives that new thread's id before the turn starts. */
   send: (threadId: ThreadId | null, question: string, mode: SendMode, onThreadStarted: (threadId: ThreadId) => void) => Promise<void>;
+  /** Sends the thread's last question again with the context it had; it reads the screen again for nobody. */
+  retry: (threadId: ThreadId) => Promise<void>;
   isSending: (threadId: ThreadId | null) => boolean;
 }>;
 
+type LastSend = Readonly<{ question: string; contextText: string | null }>;
+
 export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTracker, report: (threadId: ThreadId | null, error: unknown) => void): Sender {
+  const lastSent = useRef(new Map<ThreadId, LastSend>());
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const setPendingKey = useCallback((key: string, isPending: boolean) => {
     setPending((previous) => {
@@ -57,6 +62,7 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
           target = await api.threadStart();
           onThreadStarted(target);
         }
+        lastSent.current.set(target, { question, contextText });
         const turnId = await api.turnStart(target, question, contextText);
         store.begin(target, { turnId, question });
       } catch (error) {
@@ -68,5 +74,22 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
     [api, store, tracker, report, setPendingKey],
   );
 
-  return { send, isSending: (threadId) => pending.has(threadId ?? NEW_CHAT_KEY) };
+  const retry = useCallback(
+    async (threadId: ThreadId): Promise<void> => {
+      const last = lastSent.current.get(threadId);
+      if (last === undefined) return report(threadId, new Error("nothing to retry in this chat; type the question again"));
+      setPendingKey(threadId, true);
+      try {
+        const turnId = await api.turnStart(threadId, last.question, last.contextText);
+        store.begin(threadId, { turnId, question: last.question });
+      } catch (error) {
+        report(threadId, error);
+      } finally {
+        setPendingKey(threadId, false);
+      }
+    },
+    [api, store, report, setPendingKey],
+  );
+
+  return { send, retry, isSending: (threadId) => pending.has(threadId ?? NEW_CHAT_KEY) };
 }

@@ -22,6 +22,8 @@ export type ChatPaneProps = Readonly<{
   store: ThreadStore;
   tracker: ScrollTracker;
   onOpenSideChat?: (turnId: TurnId) => void;
+  /** Sends the failed question again; the button shows only while the pane shows a failure. */
+  onRetry?: () => void;
   /** The composer of this pane: it sits inside the pane so keyboard focus there names the pane. */
   children?: ReactNode;
   /** Receives the scroll container, which the last-scrolled tracking reads. */
@@ -39,7 +41,7 @@ function assignRef(ref: Ref<HTMLDivElement> | undefined, element: HTMLDivElement
 
 const NO_THREAD_VIEW = { messages: [], activeTurn: null, error: null } as const;
 
-export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpenSideChat, children, ref }: ChatPaneProps): ReactElement {
+export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpenSideChat, onRetry, children, ref }: ChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => (threadId === null ? NO_THREAD_VIEW : store.view(threadId)));
   const element = useRef<HTMLDivElement | null>(null);
   const followsBottom = useRef(true);
@@ -90,7 +92,16 @@ export function ChatPane({ paneId, threadId, label, title, store, tracker, onOpe
           {view.messages.map((message, index) => (
             <Message key={message.id} message={message} position={index + 1} {...(onOpenSideChat === undefined ? {} : { onOpenSideChat })} />
           ))}
-          {view.error === null ? null : <p className="thread-error" role="alert">{view.error}</p>}
+          {view.error === null ? null : (
+            <div className="thread-error-row">
+              <p className="thread-error" role="alert">{view.error}</p>
+              {onRetry === undefined ? null : (
+                <button type="button" className="retry-button" onClick={onRetry}>
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {children}

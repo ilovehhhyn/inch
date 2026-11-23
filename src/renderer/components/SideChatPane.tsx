@@ -17,14 +17,15 @@ export type SideChatPaneProps = Readonly<{
   isSending: boolean;
   onSend: (threadId: ThreadId, question: string, mode: SendMode) => void;
   onInterrupt: (threadId: ThreadId, turnId: TurnId) => void;
+  onRetry: (threadId: ThreadId) => void;
   onClose: (threadId: ThreadId) => void;
 }>;
 
-export function SideChatPane({ paneId, threadId, title, store, tracker, isSending, onSend, onInterrupt, onClose }: SideChatPaneProps): ReactElement {
+export function SideChatPane({ paneId, threadId, title, store, tracker, isSending, onSend, onInterrupt, onRetry, onClose }: SideChatPaneProps): ReactElement {
   const view = useSyncExternalStore(store.subscribe, () => store.view(threadId));
   const [draft, setDraft] = useState("");
   return (
-    <ChatPane paneId={paneId} threadId={threadId} label="Side chat" title={title} store={store} tracker={tracker}>
+    <ChatPane paneId={paneId} threadId={threadId} label="Side chat" title={title} store={store} tracker={tracker} onRetry={() => onRetry(threadId)}>
       <button type="button" className="side-chat-close" aria-label="Close side chat" onClick={() => onClose(threadId)}>
         ×
       </button>
