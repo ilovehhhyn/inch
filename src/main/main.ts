@@ -2,6 +2,11 @@
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
 
+import type { StartupStatus } from "../shared/ipc-contract";
+import { StartupError } from "../shared/startup-error";
+import { locateCodex } from "./codex-locator";
+import { registerIpc } from "./ipc";
+
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
 
@@ -20,7 +25,20 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
-void app.whenReady().then(createWindow);
+async function checkCodex(): Promise<StartupStatus> {
+  try {
+    const { version } = await locateCodex();
+    return { ok: true, codexVersion: version };
+  } catch (error) {
+    if (error instanceof StartupError) return { ok: false, error: error.info };
+    throw error;
+  }
+}
+
+void app.whenReady().then(() => {
+  registerIpc({ startupStatus: checkCodex });
+  createWindow();
+});
 app.on("window-all-closed", () => {
   app.quit();
 });
