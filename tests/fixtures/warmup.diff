@@ -1,0 +1,35 @@
+diff --git a/data.py b/data.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/data.py
++++ b/data.py
+@@ -18,3 +18,4 @@ import random
+ def load_split(path, holdout=0.02):
+     rows = read_jsonl(path)
+-    return split_by_sequence(rows, holdout)
++    rows = dedupe(rows)
++    return split_by_document(rows, holdout)
+diff --git a/config.py b/config.py
+index 2b3c4d5..6e7f809 100644
+--- a/config.py
++++ b/config.py
+@@ -11,2 +11,3 @@ import os
+ total_steps = 20_000
++warmup_steps = int(0.02 * total_steps)  # 400
+ peak_lr = 2e-4
+diff --git a/train.py b/train.py
+index 83db48f..bf2a3c1 100644
+--- a/train.py
++++ b/train.py
+@@ -36,10 +36,11 @@ import math
+ def get_lr(step, warmup_steps, total_steps, peak):
+     if step < warmup_steps:
+-        return peak
++        # ramp linearly from 0 to peak
++        return peak * (step // warmup_steps)
+     progress = (step - warmup_steps) / (total_steps - warmup_steps)
+     cosine = 0.5 * (1 + math.cos(math.pi * progress))
+     return peak * (0.1 + 0.9 * cosine)
+ 
+ def train(model, data, cfg):
+     for step, batch in enumerate(data):
+         lr = get_lr(step, cfg.warmup_steps, ...)
