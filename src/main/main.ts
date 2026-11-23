@@ -1,8 +1,9 @@
 // Starts the Electron app: checks Codex, starts one app-server session and opens the single Margin window.
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, safeStorage, shell } from "electron";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { buildAntEnvironment, createAntCli, nodeAntExec, type AntCli } from "../claude/ant-cli";
 import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
 import type { ChatProvider } from "../shared/chat-provider";
@@ -10,6 +11,8 @@ import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import type { ProviderEvent } from "../shared/provider-events";
 import type { ProviderId } from "../shared/provider-id";
 import { StartupError, type StartupErrorInfo } from "../shared/startup-error";
+import { readClaudeBaseUrl, scrubAnthropicVariables } from "./claude-environment";
+import { createClaudeServices, type ClaudeServices } from "./claude-services";
 import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex, nodeStartupServices } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
@@ -17,8 +20,13 @@ import { runGitDiff } from "./git-diff";
 import { requireSavedDiffFolder } from "./ipc-arguments";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
+import { createSafeStorageSecretStore } from "./secret-store";
 import { appendLatencyRecord } from "./metrics-store";
 import { createSupervisedCodexProvider } from "./supervised-codex-provider";
+
+/** Read once, before the variables are removed: the address of a fake Anthropic service in the end-to-end tests. */
+const claudeBaseUrl = readClaudeBaseUrl(process.env);
+scrubAnthropicVariables(process.env);
 
 const WINDOW_WIDTH_PX = 1280;
 const WINDOW_HEIGHT_PX = 800;
@@ -68,6 +76,22 @@ const codex = createSupervisedCodexProvider(async () => {
 });
 
 const providers: Readonly<Partial<Record<ProviderId, ChatProvider>>> = { codex: codex.provider };
+
+let claude: ClaudeServices | undefined;
+
+function requireClaude(): ClaudeServices {
+  if (claude === undefined) throw new Error("Claude is not ready; wait for the window to finish starting");
+  return claude;
+}
+
+/** `ant` is found through the login-shell PATH, which a window started from Finder does not have; it is read once, on first use. */
+function createLazyAnt(): () => Promise<AntCli> {
+  let pending: Promise<AntCli> | undefined;
+  return () => {
+    pending ??= nodeStartupServices.readLoginShellPath().then((path) => createAntCli({ exec: nodeAntExec, environment: buildAntEnvironment(process.env, path) }));
+    return pending;
+  };
+}
 
 function providerFor(id: ProviderId): ChatProvider {
   const provider = providers[id];
@@ -129,11 +153,14 @@ function registerHandlers(started: Promise<StartedCodex>): void {
         throw error;
       }
     },
-    accountRead: (provider) => providerFor(provider).readAccount(),
+    accountRead: (provider) => (provider === "claude" ? requireClaude().readAccount() : providerFor(provider).readAccount()),
     authStart: async (kind) => (await readyClient()).startLogin(kind),
     authApiKey: async (apiKey) => (await readyClient()).startApiKeyLogin(apiKey),
     authCancel: async (loginId) => (await readyClient()).cancelLogin(loginId),
     authLogout: async () => (await readyClient()).logout(),
+    claudeSignInConsole: () => requireClaude().signInConsole(),
+    claudeSignInApiKey: (apiKey) => requireClaude().signInApiKey(apiKey),
+    claudeSignOut: () => requireClaude().signOut(),
     threadStart: (provider) => providerFor(provider).startThread(),
     threadOpen: (provider, threadId) => providerFor(provider).readThread(threadId),
     threadList: async () => (await Promise.all(Object.values(providers).map((provider) => provider.listThreads()))).flat().sort((left, right) => right.updatedAtSec - left.updatedAtSec),
@@ -154,6 +181,13 @@ function registerHandlers(started: Promise<StartedCodex>): void {
 }
 
 void app.whenReady().then(() => {
+  claude = createClaudeServices({
+    store: createSafeStorageSecretStore({ safeStorage, directory: join(app.getPath("userData"), "secrets") }),
+    ant: createLazyAnt(),
+    clock: Date.now,
+    clientOptions: claudeBaseUrl === undefined ? {} : { baseURL: claudeBaseUrl },
+    log,
+  });
   const started = startCodex();
   starting = started;
   started.catch(() => undefined); // not silent: startupStatus reports the failure to the window

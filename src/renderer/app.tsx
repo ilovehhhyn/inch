@@ -1,13 +1,16 @@
-// Draws the root layout of the window: the startup error, sign-in, or the app, chosen from the account state.
-import { useEffect, useState, type ReactElement } from "react";
+// Draws the root layout of the window: the startup error, the sign-in page, or the app, chosen from the account state.
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import type { ProviderAccount } from "../shared/chat-provider";
 import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
+import type { ProviderId } from "../shared/provider-id";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
 import { Workspace } from "./workspace";
 
 export type AppProps = Readonly<{ api: MarginApi }>;
+
+type Accounts = Readonly<Record<ProviderId, ProviderAccount>>;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -19,7 +22,8 @@ function crashStatus(error: unknown): StartupStatus {
 
 export function App({ api }: AppProps): ReactElement | null {
   const [status, setStatus] = useState<StartupStatus | null>(null);
-  const [account, setAccount] = useState<ProviderAccount | null>(null);
+  const [accounts, setAccounts] = useState<Accounts | null>(null);
+  const [isManagingAccounts, setManagingAccounts] = useState(false);
   const [draft, setDraft] = useState("");
 
   useEffect(() => {
@@ -28,19 +32,26 @@ export function App({ api }: AppProps): ReactElement | null {
 
   useEffect(() => api.onFault((error) => setStatus({ ok: false, error })), [api]);
 
+  const readAccounts = useCallback((): void => {
+    Promise.all([api.accountRead("codex"), api.accountRead("claude")]).then(([codex, claude]) => setAccounts({ codex, claude }), (error: unknown) => setStatus(crashStatus(error)));
+  }, [api]);
+
   const isReady = status?.ok === true;
   useEffect(() => {
     if (!isReady) return undefined;
-    api.accountRead("codex").then(setAccount, (error: unknown) => setStatus(crashStatus(error)));
+    readAccounts();
     return api.onAuthChanged((event) => {
       const isAccountChange = event.type === "account" || (event.type === "loginCompleted" && event.success);
-      if (isAccountChange) api.accountRead("codex").then(setAccount, (error: unknown) => setStatus(crashStatus(error)));
+      if (isAccountChange) readAccounts();
     });
-  }, [api, isReady]);
+  }, [api, isReady, readAccounts]);
 
   if (status === null) return null;
   if (!status.ok) return <StartupError error={status.error} copyText={api.copyText} />;
-  if (account === null) return null;
-  if (!account.signedIn) return <SignIn api={api} />;
-  return <Workspace api={api} draft={draft} onDraftChange={setDraft} />;
+  if (accounts === null) return null;
+  const isSignedInAnywhere = accounts.codex.signedIn || accounts.claude.signedIn;
+  if (!isSignedInAnywhere || isManagingAccounts) {
+    return <SignIn api={api} accounts={accounts} onAccountsChanged={readAccounts} {...(isSignedInAnywhere ? { onClose: () => setManagingAccounts(false) } : {})} />;
+  }
+  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} />;
 }

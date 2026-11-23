@@ -56,6 +56,22 @@ export class FakeMarginApi implements MarginApi {
     this.calls.push("apiKey");
     this.apiKeys.push(apiKey);
   };
+  /** When set, the Claude sign-in calls reject with it. */
+  claudeSignInError: Error | null = null;
+  readonly claudeApiKeys: Array<string> = [];
+  claudeSignInConsole = async (): Promise<void> => {
+    this.calls.push("claudeSignInConsole");
+    if (this.claudeSignInError !== null) throw this.claudeSignInError;
+  };
+  claudeSignInApiKey = async (apiKey: string): Promise<void> => {
+    this.calls.push("claudeSignInApiKey");
+    this.claudeApiKeys.push(apiKey);
+    if (this.claudeSignInError !== null) throw this.claudeSignInError;
+  };
+  claudeSignOut = async (): Promise<void> => {
+    this.calls.push("claudeSignOut");
+    this.claudeAccount = { provider: "claude", signedIn: false, label: null };
+  };
   authCancel = async (loginId: string): Promise<void> => {
     this.calls.push(`cancel:${loginId}`);
   };

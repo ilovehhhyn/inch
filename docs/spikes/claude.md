@@ -18,7 +18,7 @@ The first-token delay for Claude therefore has no number, and the comparison wit
 | Name | Value | Basis | What it does not show |
 | --- | --- | --- | --- |
 | `CLAUDE_DEFAULT_EFFORT` | `"low"` | The plan's rule: choose the lower effort unless its answers are wrong on the probe. The probe has not run, so the rule's condition is untested. | That `low` answers well enough, or is faster. |
-| `ANT_TOKEN_NEEDS_OAUTH_BETA` | `true` | The bundled Claude API reference says `/v1/messages` rejects an OAuth token without the header. The SDK source (`@anthropic-ai/sdk` 1.12.0, `client.js`, `prepareRequest`) appends `oauth-2025-04-20` itself when the client holds an `authToken`, so Margin's explicit header is a second copy of the same value. | That the server accepts the request. Nobody has sent one. |
+| `ANT_TOKEN_NEEDS_OAUTH_BETA` | `true` | The bundled Claude API reference says `/v1/messages` rejects an OAuth token without `anthropic-beta: oauth-2025-04-20`. In `@anthropic-ai/sdk` 1.12.0 (`client.js`) a plain `authToken` gets no such header from the SDK (only credential providers do), and a request that passes its own `betas` replaces the client's default `anthropic-beta` header. Margin therefore sets the header as a client default and adds the beta to every request's `betas` list (`betasFor`). A unit test with a captured request shows both reach the wire. | That the server accepts the request. Nobody has sent one. |
 
 Both values are written as named constants so the measurement can replace them in one place.
 

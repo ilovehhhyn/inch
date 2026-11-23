@@ -25,6 +25,9 @@ const api: MarginApi = {
   turnStart: (provider, threadId, question, contextText) => ipcRenderer.invoke(IPC_CHANNELS.turnStart, provider, threadId, question, contextText),
   turnInterrupt: (provider, threadId, turnId) => ipcRenderer.invoke(IPC_CHANNELS.turnInterrupt, provider, threadId, turnId),
   metricsAppend: (record) => ipcRenderer.invoke(IPC_CHANNELS.metricsAppend, record),
+  claudeSignInConsole: () => ipcRenderer.invoke(IPC_CHANNELS.claudeSignInConsole),
+  claudeSignInApiKey: (apiKey) => ipcRenderer.invoke(IPC_CHANNELS.claudeSignInApiKey, apiKey),
+  claudeSignOut: () => ipcRenderer.invoke(IPC_CHANNELS.claudeSignOut),
   onFault: (handler) => {
     const listener = (_event: IpcRendererEvent, info: StartupErrorInfo): void => handler(info);
     ipcRenderer.on(IPC_CHANNELS.fault, listener);

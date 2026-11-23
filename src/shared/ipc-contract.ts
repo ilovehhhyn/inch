@@ -17,6 +17,9 @@ export const IPC_CHANNELS = {
   authCancel: "auth:cancel",
   authLogout: "auth:logout",
   authChanged: "auth:changed",
+  claudeSignInConsole: "claude:signInConsole",
+  claudeSignInApiKey: "claude:signInApiKey",
+  claudeSignOut: "claude:signOut",
   threadStart: "thread:start",
   threadOpen: "thread:open",
   threadList: "thread:list",
@@ -45,6 +48,12 @@ export type MarginApi = Readonly<{
   authCancel(loginId: string): Promise<void>;
   authLogout(): Promise<void>;
   onAuthChanged(handler: (event: AuthEvent) => void): () => void;
+  /** Signs in to a Claude Console account through `ant`; rejects with a message that names the fix, such as installing `ant`. */
+  claudeSignInConsole(): Promise<void>;
+  /** Checks the key with Anthropic and stores it encrypted; the key is never returned, logged or shown again. */
+  claudeSignInApiKey(apiKey: string): Promise<void>;
+  /** Deletes the stored key and logs out of Margin's own `ant` profile; other `ant` profiles and Claude Code are untouched. */
+  claudeSignOut(): Promise<void>;
   /** Starts a thread of `provider` on its default model. */
   threadStart(provider: ProviderId): Promise<ThreadId>;
   /** Opens a stored thread of `provider` and returns its messages. */

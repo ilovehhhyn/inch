@@ -137,7 +137,7 @@ function withEnvironment(values: Readonly<Record<string, string>>): void {
   Object.assign(process.env, values);
   onTestFinished(() => {
     for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[name];
+      if (value === undefined) Reflect.deleteProperty(process.env, name);
       else process.env[name] = value;
     }
   });

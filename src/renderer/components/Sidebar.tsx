@@ -9,9 +9,10 @@ export type SidebarProps = Readonly<{
   selectedId: ThreadId | null;
   onSelect: (threadId: ThreadId) => void;
   onNewChat: () => void;
+  onManageAccounts: () => void;
 }>;
 
-export function Sidebar({ threads, selectedId, onSelect, onNewChat }: SidebarProps): ReactElement {
+export function Sidebar({ threads, selectedId, onSelect, onNewChat, onManageAccounts }: SidebarProps): ReactElement {
   return (
     <nav className="sidebar" aria-label="Chats">
       <button type="button" className="side-item" onClick={onNewChat}>
@@ -22,6 +23,9 @@ export function Sidebar({ threads, selectedId, onSelect, onNewChat }: SidebarPro
           {thread.title}
         </button>
       ))}
+      <button type="button" className="side-item" onClick={onManageAccounts}>
+        Accounts
+      </button>
     </nav>
   );
 }

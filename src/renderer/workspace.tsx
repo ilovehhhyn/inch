@@ -22,6 +22,7 @@ export type WorkspaceProps = Readonly<{
   api: MarginApi;
   draft: string;
   onDraftChange: (draft: string) => void;
+  onManageAccounts: () => void;
 }>;
 
 const NEW_CHAT_TITLE = "New chat";
@@ -37,7 +38,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactElement {
+export function Workspace({ api, draft, onDraftChange, onManageAccounts }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
   const recorder = useMemo(() => new LatencyRecorder({ sink: (record) => api.metricsAppend(record), now: monotonicClock, wallClock: () => new Date() }), [api]);
@@ -183,6 +184,7 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     <main className="app" aria-label="Margin">
       <Sidebar
         threads={threads}
+        onManageAccounts={onManageAccounts}
         selectedId={mainThread}
         onSelect={select}
         onNewChat={() => {

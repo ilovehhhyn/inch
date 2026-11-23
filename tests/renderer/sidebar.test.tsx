@@ -24,6 +24,7 @@ test("the_sidebar_lists_every_chat_marks_the_open_one_and_reports_clicks", async
       onNewChat={() => {
         newChats += 1;
       }}
+      onManageAccounts={() => undefined}
     />,
   );
 
