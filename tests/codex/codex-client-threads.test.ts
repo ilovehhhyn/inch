@@ -141,17 +141,25 @@ test("resume_sends_the_same_read_only_defaults_for_the_same_thread", async () =>
   expect(sent()[0]?.params).toEqual({ threadId: THREAD_ID, ...DEFAULTS });
 });
 
-test("fork_sends_the_parent_the_last_turn_and_the_read_only_defaults", async () => {
+test("fork_sends_the_parent_the_last_turn_an_explicit_model_and_the_read_only_defaults", async () => {
   const { fake, client, sent } = await setup();
   fake.respond("thread/fork", { thread: { id: "thread-2" } });
 
-  const forked = await client.forkThread(asThreadId(THREAD_ID), asTurnId(TURN_ID));
-  const forkedWhole = await client.forkThread(asThreadId(THREAD_ID), null);
+  const forked = await client.forkThread(asThreadId(THREAD_ID), asTurnId(TURN_ID), "gpt-5.6-sol");
+  const forkedWhole = await client.forkThread(asThreadId(THREAD_ID), null, "gpt-5.6-sol");
 
   expect(forked).toBe("thread-2");
   expect(forkedWhole).toBe("thread-2");
-  expect(sent()[0]?.params).toEqual({ threadId: THREAD_ID, lastTurnId: TURN_ID, ...DEFAULTS });
-  expect(sent()[1]?.params).toEqual({ threadId: THREAD_ID, lastTurnId: null, ...DEFAULTS });
+  expect(sent()[0]?.params).toEqual({ threadId: THREAD_ID, lastTurnId: TURN_ID, model: "gpt-5.6-sol", ...DEFAULTS });
+  expect(sent()[1]?.params).toEqual({ threadId: THREAD_ID, lastTurnId: null, model: "gpt-5.6-sol", ...DEFAULTS });
+});
+
+test("fork_without_a_model_is_refused_because_codex_would_use_the_config_default", async () => {
+  const { client, sent } = await setup();
+
+  await expect(client.forkThread(asThreadId(THREAD_ID), null, " ")).rejects.toThrow(/model must not be empty/);
+
+  expect(sent()).toEqual([]);
 });
 
 test("list_and_read_ask_for_the_data_the_window_needs", async () => {

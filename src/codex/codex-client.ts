@@ -2,7 +2,7 @@
 import { isAbsolute } from "node:path";
 
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
-import type { ScreenContext } from "../shared/screen-context";
+import type { RenderedContext } from "../shared/rendered-context";
 import type { AccountSummary, AccountType, AuthEvent, LoginKind, LoginStarted } from "../shared/auth";
 import type { Logger } from "../shared/log";
 import type { ServerNotification } from "./generated/ServerNotification";
@@ -237,9 +237,13 @@ export class CodexClient {
     this.resumable.add(threadId);
   }
 
-  /** Forks `threadId` through `lastTurnId` (all turns when null) into a new thread with Margin's defaults. */
-  async forkThread(threadId: ThreadId, lastTurnId: TurnId | null): Promise<ThreadId> {
-    const { thread } = await this.connection.request("thread/fork", { threadId, lastTurnId, ...this.threadDefaults });
+  /**
+   * Forks `threadId` through `lastTurnId` (all turns when null) into a new thread with Margin's defaults. The model is
+   * explicit because a fork without one uses the user's config default (measured on codex-cli 0.146.0), which can be rate limited.
+   */
+  async forkThread(threadId: ThreadId, lastTurnId: TurnId | null, model: string): Promise<ThreadId> {
+    requireText(model, "model");
+    const { thread } = await this.connection.request("thread/fork", { threadId, lastTurnId, model, ...this.threadDefaults });
     return asThreadId(thread.id);
   }
 
@@ -255,7 +259,7 @@ export class CodexClient {
   }
 
   /** Sends the context and the question as two text items; the context item ends with a blank line so they do not run together. */
-  async startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: ScreenContext | null }>): Promise<TurnId> {
+  async startTurn(threadId: ThreadId, input: Readonly<{ question: string; context: RenderedContext | null }>): Promise<TurnId> {
     requireText(input.question, "question");
     const items = [...(input.context === null ? [] : [input.context.text + CONTEXT_SEPARATOR]), input.question];
     const { turn } = await this.connection.request("turn/start", { threadId, input: items.map((text) => ({ type: "text" as const, text, text_elements: [] })) });
