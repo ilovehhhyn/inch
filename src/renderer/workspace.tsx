@@ -1,5 +1,5 @@
 // Draws the signed-in window: the chat list, the main chat, the right panel of side chats, and sends the user's questions.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
 
 import type { AttachmentChip } from "../shared/attachment";
 import type { MarginApi } from "../shared/ipc-contract";
@@ -13,13 +13,27 @@ import { Composer, type ComposerPickers, type SendMode } from "./components/Comp
 import { DiffPane } from "./components/DiffPane";
 import { Sidebar } from "./components/Sidebar";
 import { SideChatPane } from "./components/SideChatPane";
+import type { Capture } from "./context/capture-context";
 import { DIFF_PANE_ID, MAIN_PANE_ID, sidePaneId } from "./context/pane-id";
 import { createScrollTracker } from "./context/scroll-tracker";
 import { LatencyRecorder } from "./metrics";
 import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
 import { useAttachments } from "./state/use-attachments";
-import { useSender } from "./state/use-sender";
+import { captureForSpeech, useSender } from "./state/use-sender";
+import { createPushToTalk, PUSH_TO_TALK_KEY, type Recording, type VoiceStatus } from "./voice/push-to-talk";
+
+/** The parts of voice that need the browser microphone; tests replace them, the app uses `startWavRecording`. */
+export type VoiceEnvironment = Readonly<{ startRecording: () => Promise<Recording> }>;
+
+const LISTENING_TEXT = `Listening… release ${PUSH_TO_TALK_KEY.label} to send`;
+
+function voiceStatusText(status: VoiceStatus): string | null {
+  if (status.kind === "idle") return null;
+  if (status.kind === "listening") return LISTENING_TEXT;
+  if (status.kind === "transcribing") return "Transcribing…";
+  return status.message;
+}
 
 export type WorkspaceProps = Readonly<{
   api: MarginApi;
@@ -30,6 +44,7 @@ export type WorkspaceProps = Readonly<{
   providers: ReadonlyArray<ProviderId>;
   /** A provider reported that its account changed, such as an expired Claude sign-in; the window reads the accounts again. */
   onAccountChanged: () => void;
+  voice: VoiceEnvironment;
 }>;
 
 const NEW_CHAT_TITLE = "New chat";
@@ -46,7 +61,7 @@ function pickerProps(pickers: ComposerPickers | undefined): { pickers?: Composer
   return pickers === undefined ? {} : { pickers };
 }
 
-export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged }: WorkspaceProps): ReactElement {
+export function Workspace({ api, draft, onDraftChange, onManageAccounts, providers, onAccountChanged, voice }: WorkspaceProps): ReactElement {
   const store = useMemo(() => new ThreadStore(), []);
   const tracker = useMemo(() => createScrollTracker(monotonicClock), []);
   const recorder = useMemo(() => new LatencyRecorder({ sink: (record) => api.metricsAppend(record), now: monotonicClock, wallClock: () => new Date() }), [api]);
@@ -212,7 +227,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
   }
 
   /** Sends in `threadId`, or starts a chat of the new-chat provider when null; the provider is looked up here so a missing one is shown, not thrown. */
-  async function sendIn(threadId: ThreadId | null, question: string, mode: SendMode, chips: ReadonlyArray<AttachmentChip>): Promise<boolean> {
+  async function sendIn(threadId: ThreadId | null, question: string, mode: SendMode, chips: ReadonlyArray<AttachmentChip>, capture?: Capture, onTurnStarted?: (turnId: TurnId) => void): Promise<boolean> {
     let provider: ProviderId;
     try {
       provider = threadId === null ? newChatProvider : providerOfThread(threadId);
@@ -234,11 +249,21 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
       return false;
     }
     const chosen = choice;
-    return sender.send(provider, threadId, question, mode, chosen, chips, (started) => {
-      threadProviders.current.set(started, provider);
-      setStartedChats((previous) => new Map(previous).set(started, provider));
-      rememberChoice(started, chosen);
-      setMainThread(started);
+    return sender.send({
+      provider,
+      threadId,
+      question,
+      mode,
+      choice: chosen,
+      attachments: chips,
+      ...(capture === undefined ? {} : { capture }),
+      ...(onTurnStarted === undefined ? {} : { onTurnStarted }),
+      onThreadStarted: (started) => {
+        threadProviders.current.set(started, provider);
+        setStartedChats((previous) => new Map(previous).set(started, provider));
+        rememberChoice(started, chosen);
+        setMainThread(started);
+      },
     });
   }
 
@@ -271,6 +296,51 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
     return { models: list, choice, onChoiceChange, ...(providerChoice === undefined ? {} : { provider: providerChoice }) };
   }
 
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>({ kind: "idle" });
+  /** The newest send and draft, so the one push-to-talk controller of this window always acts on the chat that is open now. */
+  const speechTargets = useRef<{ send: (text: string, capture: Capture) => Promise<boolean>; restore: (text: string) => void } | null>(null);
+  useLayoutEffect(() => {
+    speechTargets.current = {
+      send: async (text, capture) => {
+        const wasSent = await sendIn(mainThread, text, "withContext", mainAttachments.chips, capture);
+        if (wasSent) mainAttachments.clear();
+        return wasSent;
+      },
+      restore: (text) => onDraftChange(draft + text),
+    };
+  });
+  useEffect(() => {
+    const pushToTalk = createPushToTalk({
+      requestMicrophone: () => api.microphoneRequest(),
+      startRecording: voice.startRecording,
+      transcribe: (wav) => api.speechTranscribe(wav),
+      captureContext: () => captureForSpeech(tracker),
+      send: (text, capture) => {
+        if (speechTargets.current === null) throw new Error("the window is not ready to send a spoken message");
+        return speechTargets.current.send(text, capture);
+      },
+      onUnsent: (text) => speechTargets.current?.restore(text),
+      onStatus: setVoiceStatus,
+      now: monotonicClock,
+      schedule: (ms, fire) => {
+        const timer = setTimeout(fire, ms);
+        return () => clearTimeout(timer);
+      },
+    });
+    const keyDown = (event: KeyboardEvent): void => pushToTalk.keyDown({ code: event.code, repeat: event.repeat });
+    const keyUp = (event: KeyboardEvent): void => pushToTalk.keyUp({ code: event.code });
+    const blur = (): void => pushToTalk.cancel();
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+    window.addEventListener("blur", blur);
+    return () => {
+      pushToTalk.cancel();
+      window.removeEventListener("keydown", keyDown);
+      window.removeEventListener("keyup", keyUp);
+      window.removeEventListener("blur", blur);
+    };
+  }, [api, voice, tracker]);
+
   const mainTitle = threads.find((thread) => thread.id === mainThread)?.title ?? NEW_CHAT_TITLE;
 
   return (
@@ -297,6 +367,7 @@ export function Workspace({ api, draft, onDraftChange, onManageAccounts, provide
               return wasSent;
             }}
             attachments={{ chips: mainAttachments.chips, onAdd: mainAttachments.add, onRemove: mainAttachments.remove }}
+            voiceStatus={voiceStatusText(voiceStatus)}
             onInterrupt={() => {
               if (mainThread !== null && mainView.activeTurn !== null) interrupt(mainThread, mainView.activeTurn);
             }}

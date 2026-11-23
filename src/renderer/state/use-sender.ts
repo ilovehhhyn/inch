@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import type { AttachmentChip } from "../../shared/attachment";
 import type { MarginApi } from "../../shared/ipc-contract";
 import type { ModelChoice } from "../../shared/models";
-import type { ThreadId } from "../../shared/provider-events";
+import type { ThreadId, TurnId } from "../../shared/provider-events";
 import type { ProviderId } from "../../shared/provider-id";
 import type { SendMode } from "../components/Composer";
 import { captureContext, CAPTURE_BUDGET_MS, type Capture } from "../context/capture-context";
@@ -22,20 +22,50 @@ function focusedPaneId(): PaneId | null {
   return id === null || id === undefined ? null : asPaneId(id);
 }
 
-/** Reads the pane scrolled last (else the focused pane) for Command-I; Enter reads nothing. Either send starts a new scroll window. */
-function contextFor(mode: SendMode, tracker: ScrollTracker): Capture | null {
+/** Reads the pane scrolled last (else the focused pane); `choosePane` has no side effect, so a read that is never sent leaves the scroll window as it was. */
+function readContext(tracker: ScrollTracker): Capture {
   const paneId = tracker.choosePane(focusedPaneId());
-  tracker.markMessageSent();
-  if (mode === "plain") return null;
   if (paneId === null) throw new Error("no pane to read: scroll a pane or click into one, then press Command-I");
   const capture = captureContext(paneId);
   if (capture.elapsedMs > CAPTURE_BUDGET_MS) console.warn(`reading ${paneId} took ${capture.elapsedMs.toFixed(1)} ms, over the ${CAPTURE_BUDGET_MS} ms budget`);
   return capture;
 }
 
+/** Reads for Command-I; Enter reads nothing. Either send starts a new scroll window. */
+function contextFor(mode: SendMode, tracker: ScrollTracker): Capture | null {
+  const capture = mode === "plain" ? null : readContext(tracker);
+  tracker.markMessageSent();
+  return capture;
+}
+
+/** The read a spoken message makes when its key goes down, because that is when the person was reading; the scroll window is reset only when the message is sent. */
+export function captureForSpeech(tracker: ScrollTracker): Capture {
+  return readContext(tracker);
+}
+
+/** A spoken message was read earlier; sending it starts the new scroll window, as any send does. */
+function resetAfterSpeech(capture: Capture, tracker: ScrollTracker): Capture {
+  tracker.markMessageSent();
+  return capture;
+}
+
+/** One send. `capture` is a context read earlier (a spoken message reads at key down); without it Command-I reads now. */
+export type SendRequest = Readonly<{
+  provider: ProviderId;
+  /** The chat to send in, or null to start a new chat of `provider`; `onThreadStarted` receives that chat's id before the turn starts. */
+  threadId: ThreadId | null;
+  question: string;
+  mode: SendMode;
+  choice: ModelChoice;
+  attachments: ReadonlyArray<AttachmentChip>;
+  capture?: Capture;
+  onThreadStarted: (threadId: ThreadId) => void;
+  /** Receives the id of the turn once the provider accepted it. */
+  onTurnStarted?: (turnId: TurnId) => void;
+}>;
+
 export type Sender = Readonly<{
-  /** Sends in `threadId`, or in a new thread of `provider` when null; `onThreadStarted` receives that new thread's id before the turn starts. */
-  send: (provider: ProviderId, threadId: ThreadId | null, question: string, mode: SendMode, choice: ModelChoice, attachments: ReadonlyArray<AttachmentChip>, onThreadStarted: (threadId: ThreadId) => void) => Promise<boolean>;
+  send: (request: SendRequest) => Promise<boolean>;
   /** Sends the thread's last question again with the context it had; it reads the screen again for nobody. */
   retry: (threadId: ThreadId) => Promise<void>;
   isSending: (threadId: ThreadId | null) => boolean;
@@ -56,24 +86,26 @@ export function useSender(api: MarginApi, store: ThreadStore, tracker: ScrollTra
   }, []);
 
   const send = useCallback(
-    async (provider: ProviderId, threadId: ThreadId | null, question: string, mode: SendMode, choice: ModelChoice, attachments: ReadonlyArray<AttachmentChip>, onThreadStarted: (threadId: ThreadId) => void): Promise<boolean> => {
-      const key = threadId ?? NEW_CHAT_KEY;
+    async (request: SendRequest): Promise<boolean> => {
+      const { provider, question, choice, attachments } = request;
+      const key = request.threadId ?? NEW_CHAT_KEY;
       setPendingKey(key, true);
-      let target = threadId;
+      let target = request.threadId;
       const startMs = performance.now();
       let mark: SendMark | null = null;
       try {
-        const capture = contextFor(mode, tracker);
+        const capture = request.capture === undefined ? contextFor(request.mode, tracker) : resetAfterSpeech(request.capture, tracker);
         const contextText = capture === null ? null : capture.text;
         if (capture !== null) mark = recorder.begin({ paneKind: capture.paneKind, blockCount: capture.blockCount, contextChars: capture.text.length, captureMs: capture.elapsedMs }, startMs);
         if (target === null) {
           target = await api.threadStart(provider);
-          onThreadStarted(target);
+          request.onThreadStarted(target);
         }
         lastSent.current.set(target, { provider, question, contextText, choice, attachments });
         const turnId = await api.turnStart(provider, target, question, contextText, choice, attachments.map((chip) => chip.id));
         mark?.acknowledged(turnId);
         store.begin(target, { turnId, question, attachments: attachments.map(({ name, kind }) => ({ name, kind })) });
+        request.onTurnStarted?.(turnId);
         return true;
       } catch (error) {
         mark?.failed();

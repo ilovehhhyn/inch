@@ -6,9 +6,13 @@ import type { MarginApi, StartupStatus } from "../shared/ipc-contract";
 import { PROVIDER_IDS, type ProviderId } from "../shared/provider-id";
 import { SignIn } from "./components/SignIn";
 import { StartupError } from "./components/StartupError";
-import { Workspace } from "./workspace";
+import { startWavRecording } from "./voice/wav-recorder";
+import { Workspace, type VoiceEnvironment } from "./workspace";
 
-export type AppProps = Readonly<{ api: MarginApi }>;
+/** The voice parts of the window; the default records the microphone, and tests pass a fake recorder. */
+const DEFAULT_VOICE: VoiceEnvironment = { startRecording: startWavRecording };
+
+export type AppProps = Readonly<{ api: MarginApi; voice?: VoiceEnvironment }>;
 
 type Accounts = Readonly<Record<ProviderId, ProviderAccount>>;
 
@@ -20,7 +24,7 @@ function crashStatus(error: unknown): StartupStatus {
   return { ok: false, error: { kind: "codex-crashed", message: `Margin could not check Codex: ${messageOf(error)}`, fix: "Restart Margin" } };
 }
 
-export function App({ api }: AppProps): ReactElement | null {
+export function App({ api, voice = DEFAULT_VOICE }: AppProps): ReactElement | null {
   const [status, setStatus] = useState<StartupStatus | null>(null);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
   const [isManagingAccounts, setManagingAccounts] = useState(false);
@@ -54,5 +58,5 @@ export function App({ api }: AppProps): ReactElement | null {
     return <SignIn api={api} accounts={accounts} onAccountsChanged={readAccounts} {...(isSignedInAnywhere ? { onClose: () => setManagingAccounts(false) } : {})} />;
   }
   const providers = PROVIDER_IDS.filter((id) => accounts[id].signedIn);
-  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} providers={providers} onAccountChanged={readAccounts} />;
+  return <Workspace api={api} draft={draft} onDraftChange={setDraft} onManageAccounts={() => setManagingAccounts(true)} providers={providers} onAccountChanged={readAccounts} voice={voice} />;
 }

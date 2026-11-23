@@ -42,6 +42,8 @@ export type ComposerProps = Readonly<{
   label?: string;
   pickers?: ComposerPickers;
   attachments?: ComposerAttachments;
+  /** What push-to-talk is doing, in words, or null; the main composer shows it because a spoken message goes to the main chat. */
+  voiceStatus?: string | null;
 }>;
 
 function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null {
@@ -53,7 +55,7 @@ function sendModeOf(event: KeyboardEvent<HTMLTextAreaElement>): SendMode | null 
   return null;
 }
 
-export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message", pickers, attachments }: ComposerProps): ReactElement {
+export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, placeholder = "Ask anything", label = "Message", pickers, attachments, voiceStatus = null }: ComposerProps): ReactElement {
   const [hint, setHint] = useState<string | null>(null);
 
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -166,6 +168,11 @@ export function Composer({ draft, onDraftChange, onSend, onInterrupt, busy, plac
         {hint === null ? null : (
           <p className="composer-hint" role="status">
             {hint}
+          </p>
+        )}
+        {voiceStatus === null ? null : (
+          <p className="composer-hint" role="status">
+            {voiceStatus}
           </p>
         )}
         {attachments === undefined ? null : <AttachmentChips chips={attachments.chips} onRemove={removeChip} />}
