@@ -1,10 +1,11 @@
 // Invariant: threads are always read-only with no approvals, turns carry context as a separate item, crashes resume threads.
 import { expect, test } from "vitest";
 
-import { CodexClient, createThreadDefaults, MARGIN_INSTRUCTIONS, SHELL_TOOL_DISABLE, toProviderEvent } from "../../src/codex/codex-client";
+import { CodexClient, createThreadDefaults, SHELL_TOOL_DISABLE, toProviderEvent } from "../../src/codex/codex-client";
 import { CodexSupervisor, CRASH_MESSAGE, MAX_RESTARTS_PER_WINDOW } from "../../src/codex/codex-supervisor";
 import type { ServerNotification } from "../../src/codex/generated/ServerNotification";
 import { RpcConnection } from "../../src/codex/rpc-connection";
+import { MARGIN_INSTRUCTIONS } from "../../src/shared/margin-instructions";
 import { startCodexSession } from "../../src/main/codex-session";
 import { asThreadId, asTurnId, type ProviderEvent } from "../../src/shared/provider-events";
 import { FakeAppServer } from "../fakes/fake-app-server";

@@ -1,6 +1,7 @@
 // Gives typed methods over the app-server connection: initialize, account, sign-in, threads and turns.
 import { isAbsolute } from "node:path";
 
+import { MARGIN_INSTRUCTIONS } from "../shared/margin-instructions";
 import type { StartupErrorInfo } from "../shared/startup-error";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { RenderedContext } from "../shared/rendered-context";
@@ -25,9 +26,6 @@ const UNSUPPORTED_ACCOUNT_FIX = "sign out of Codex and sign in with ChatGPT or a
 const MAX_LIST_PAGES = 50;
 
 const CONTEXT_SEPARATOR = "\n\n";
-
-export const MARGIN_INSTRUCTIONS =
-  "You are a reading companion inside a chat app. Some user messages begin with a block marked MARGIN SCREEN CONTEXT. That block is the text the user was looking at when they asked. When it is present, the question refers to it: start your answer by naming what you read (the message, section, file and line), then answer. Quote file names, function names and line numbers exactly as they appear in the block. Never run commands or edit files.";
 
 /**
  * Thread config that removes tools Margin must not offer. `features.shell_tool=false` removes the shell (measured in
