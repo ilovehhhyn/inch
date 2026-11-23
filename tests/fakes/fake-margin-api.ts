@@ -22,6 +22,10 @@ export class FakeMarginApi implements MarginApi {
   nextThreadIds: Array<string> = ["thread-1", "thread-2", "thread-3"];
   readonly forks: Array<Readonly<{ threadId: ThreadId; lastTurnId: TurnId }>> = [];
   nextForkIds: Array<string> = ["side-1", "side-2", "side-3"];
+  /** What the folder dialog returns next; null means the user cancelled. */
+  chosenFolder: string | null = null;
+  diffs = new Map<string, string>();
+  readonly diffReads: Array<string> = [];
   layout: Layout = DEFAULT_LAYOUT;
   readonly layoutWrites: Array<Layout> = [];
   private turnCounter = 0;
@@ -68,6 +72,13 @@ export class FakeMarginApi implements MarginApi {
     const id = this.nextForkIds.shift();
     if (id === undefined) throw new Error("the fake has no fork id left; add one to nextForkIds");
     return asThreadId(id);
+  };
+  chooseDiffFolder = async (): Promise<string | null> => this.chosenFolder;
+  diffRead = async (folder: string): Promise<string> => {
+    this.diffReads.push(folder);
+    const text = this.diffs.get(folder);
+    if (text === undefined) throw new Error(`the fake has no diff for ${folder}; add one to diffs`);
+    return text;
   };
   layoutRead = async (): Promise<Layout> => this.layout;
   layoutWrite = async (layout: Layout): Promise<void> => {

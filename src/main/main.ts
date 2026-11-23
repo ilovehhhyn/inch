@@ -1,5 +1,5 @@
 // Starts the Electron app: checks Codex, starts one app-server session and opens the single Margin window.
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, dialog, shell } from "electron";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -13,6 +13,7 @@ import { StartupError } from "../shared/startup-error";
 import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
+import { runGitDiff } from "./git-diff";
 import { registerIpc } from "./ipc";
 import { readLayout, writeLayout } from "./layout-store";
 
@@ -109,6 +110,13 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
       const { client } = (await starting).supervisor;
       return client.forkThread(threadId, lastTurnId, await client.defaultModelId());
     },
+    chooseDiffFolder: async () => {
+      const window = BrowserWindow.getFocusedWindow();
+      const options = { title: "Choose a folder for the code diff", properties: ["openDirectory" as const] };
+      const result = await (window === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options));
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+    diffRead: (folder) => runGitDiff({ folder, base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
     turnStart: async (threadId, question, contextText) => (await starting).supervisor.client.startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),

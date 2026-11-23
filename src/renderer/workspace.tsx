@@ -7,9 +7,10 @@ import type { ThreadId, TurnId } from "../shared/provider-events";
 import { messagesAfterTurn, type ThreadSummary } from "../shared/thread-history";
 import { ChatPane } from "./components/ChatPane";
 import { Composer } from "./components/Composer";
+import { DiffPane } from "./components/DiffPane";
 import { Sidebar } from "./components/Sidebar";
 import { SideChatPane } from "./components/SideChatPane";
-import { MAIN_PANE_ID, sidePaneId } from "./context/pane-id";
+import { DIFF_PANE_ID, MAIN_PANE_ID, sidePaneId } from "./context/pane-id";
 import { createScrollTracker } from "./context/scroll-tracker";
 import { EMPTY_THREAD } from "./state/thread-reducer";
 import { ThreadStore } from "./state/thread-store";
@@ -96,6 +97,15 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     }
   }
 
+  const loadDiff = useCallback((folder: string) => api.diffRead(folder), [api]);
+
+  function chooseDiffFolder(): void {
+    api
+      .chooseDiffFolder()
+      .then((folder) => (folder === null ? undefined : saveLayout((current) => ({ ...current, diffFolder: folder }))))
+      .catch((error: unknown) => setProblem(messageOf(error)));
+  }
+
   function closeSideChat(threadId: ThreadId): void {
     saveLayout((current) => ({ ...current, sideChats: current.sideChats.filter((chat) => chat.threadId !== threadId) })).catch((error: unknown) => report(mainThread, error));
   }
@@ -141,26 +151,25 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
           />
         </ChatPane>
       </div>
-      {visibleSideChats.length === 0 ? null : (
-        <aside className="side">
-          <div className="side-chats">
-            {visibleSideChats.map((chat) => (
-              <SideChatPane
-                key={chat.threadId}
-                paneId={sidePaneId(chat.threadId)}
-                threadId={chat.threadId}
-                title={`Side chat on ${mainTitle}`}
-                store={store}
-                tracker={tracker}
-                isSending={sender.isSending(chat.threadId)}
-                onSend={(threadId, question, mode) => void sender.send(threadId, question, mode, setMainThread)}
-                onInterrupt={interrupt}
-                onClose={closeSideChat}
-              />
-            ))}
-          </div>
-        </aside>
-      )}
+      <aside className="side" style={{ width: layout?.panelWidthPx }}>
+        <DiffPane paneId={DIFF_PANE_ID} tracker={tracker} folder={layout?.diffFolder ?? null} loadDiff={loadDiff} onChooseFolder={chooseDiffFolder} />
+        <div className="side-chats">
+          {visibleSideChats.map((chat) => (
+            <SideChatPane
+              key={chat.threadId}
+              paneId={sidePaneId(chat.threadId)}
+              threadId={chat.threadId}
+              title={`Side chat on ${mainTitle}`}
+              store={store}
+              tracker={tracker}
+              isSending={sender.isSending(chat.threadId)}
+              onSend={(threadId, question, mode) => void sender.send(threadId, question, mode, setMainThread)}
+              onInterrupt={interrupt}
+              onClose={closeSideChat}
+            />
+          ))}
+        </div>
+      </aside>
     </main>
   );
 }

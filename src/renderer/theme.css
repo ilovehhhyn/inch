@@ -290,9 +290,35 @@ code {
   padding-right: 10px;
   color: var(--diff-gutter);
 }
-.dl::after {
+.dl .code::before {
   content: attr(data-sign);
-  order: -1;
+  display: inline-block;
+  width: 18px;
+  color: var(--diff-gutter);
+}
+.dl.add .code::before {
+  color: var(--diff-add-sign);
+}
+.dl.del .code::before {
+  color: var(--diff-delete-sign);
+}
+.diff-note {
+  margin: 0;
+  padding: 16px;
+  color: var(--sidebar-item-text);
+  font: 16px var(--font-ui);
+}
+.pane-head .stat {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: #6f6e68;
+}
+.pane-button {
+  all: unset;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--sidebar-item-text);
 }
 .dl.add {
   background: var(--diff-add);

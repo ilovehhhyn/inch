@@ -18,6 +18,8 @@ export const IPC_CHANNELS = {
   threadOpen: "thread:open",
   threadList: "thread:list",
   threadFork: "thread:fork",
+  chooseDiffFolder: "diff:chooseFolder",
+  diffRead: "diff:read",
   layoutRead: "layout:read",
   layoutWrite: "layout:write",
   turnStart: "turn:start",
@@ -43,6 +45,10 @@ export type MarginApi = Readonly<{
   threadList(): Promise<ReadonlyArray<ThreadSummary>>;
   /** Forks `threadId` through `lastTurnId` into a new thread on the account's default model. */
   threadFork(threadId: ThreadId, lastTurnId: TurnId): Promise<ThreadId>;
+  /** Opens the folder dialog; null when the user cancels. */
+  chooseDiffFolder(): Promise<string | null>;
+  /** The `git diff` text of the folder; rejects with a message that names the folder when git fails. */
+  diffRead(folder: string): Promise<string>;
   layoutRead(): Promise<Layout>;
   layoutWrite(layout: Layout): Promise<void>;
   /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message. */
