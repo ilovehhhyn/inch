@@ -467,3 +467,49 @@ test("a_list_that_never_ends_is_a_hard_error_naming_the_limit", async () => {
 
   await expect(client.listThreads()).rejects.toThrow(/thread\/list returned more than 50 pages/);
 });
+
+test("ready_waits_through_a_restart_and_returns_the_new_client", async () => {
+  const [first, second] = [scripted(), scripted()];
+  const { supervisor } = startSupervisor([first, second]);
+  await supervisor.start();
+  const before = supervisor.client;
+
+  first.crash();
+  await settle();
+  const waiting = supervisor.ready();
+  const after = await waiting;
+
+  expect(after).not.toBe(before);
+  expect(after).toBe(supervisor.client);
+});
+
+test("ready_returns_the_client_at_once_when_running", async () => {
+  const { supervisor } = startSupervisor([scripted()]);
+  await supervisor.start();
+
+  expect(await supervisor.ready()).toBe(supervisor.client);
+});
+
+test("ready_rejects_with_the_restart_failure_when_codex_cannot_be_restarted", async () => {
+  const fakes = Array.from({ length: MAX_RESTARTS_PER_WINDOW + 2 }, scripted);
+  const { supervisor, failures } = startSupervisor(fakes);
+  await supervisor.start();
+  let waiting: Promise<unknown> = Promise.resolve();
+  for (let crash = 0; crash <= MAX_RESTARTS_PER_WINDOW; crash++) {
+    const running = fakes[crash];
+    if (running === undefined) throw new Error("missing scripted app-server");
+    running.crash();
+    await settle();
+    if (crash === MAX_RESTARTS_PER_WINDOW) waiting = supervisor.ready().catch((error: unknown) => error);
+    await until(() => (crash === MAX_RESTARTS_PER_WINDOW ? failures.length > 0 : fakes[crash + 1]?.received().some((message) => message.method === "config/read") === true));
+  }
+
+  expect(String(await waiting)).toMatch(new RegExp(`restarted ${MAX_RESTARTS_PER_WINDOW} times`));
+  await expect(supervisor.ready()).rejects.toThrow(/restarted 3 times/);
+});
+
+test("ready_before_start_is_an_error", async () => {
+  const { supervisor } = startSupervisor([]);
+
+  await expect(supervisor.ready()).rejects.toThrow(/Codex is not running; the app-server has not started/);
+});

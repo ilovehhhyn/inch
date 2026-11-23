@@ -3,7 +3,7 @@ import { app, BrowserWindow, dialog, shell } from "electron";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { summarizeAccount } from "../codex/codex-client";
+import { summarizeAccount, type CodexClient } from "../codex/codex-client";
 import { listChats, summarizeThread, toHistory } from "../codex/thread-history";
 import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
@@ -87,6 +87,8 @@ async function startCodex(): Promise<StartedCodex> {
 }
 
 function registerHandlers(starting: Promise<StartedCodex>): void {
+  /** The running client; a request made during a restart waits for it instead of failing. */
+  const readyClient = async (): Promise<CodexClient> => (await starting).supervisor.ready();
   registerIpc({
     startupStatus: async (): Promise<StartupStatus> => {
       try {
@@ -96,23 +98,23 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
         throw error;
       }
     },
-    authRead: async () => summarizeAccount(await (await starting).supervisor.client.readAccount()),
-    authStart: async (kind) => (await starting).supervisor.client.startLogin(kind),
-    authApiKey: async (apiKey) => (await starting).supervisor.client.startApiKeyLogin(apiKey),
-    authCancel: async (loginId) => (await starting).supervisor.client.cancelLogin(loginId),
-    authLogout: async () => (await starting).supervisor.client.logout(),
+    authRead: async () => summarizeAccount(await (await readyClient()).readAccount()),
+    authStart: async (kind) => (await readyClient()).startLogin(kind),
+    authApiKey: async (apiKey) => (await readyClient()).startApiKeyLogin(apiKey),
+    authCancel: async (loginId) => (await readyClient()).cancelLogin(loginId),
+    authLogout: async () => (await readyClient()).logout(),
     threadStart: async () => {
-      const { client } = (await starting).supervisor;
+      const client = await readyClient();
       return client.startThread({ model: await client.defaultModelId() });
     },
     threadOpen: async (threadId) => {
-      const { client } = (await starting).supervisor;
+      const client = await readyClient();
       await client.resumeThread(threadId, await client.defaultModelId());
       return toHistory(await client.readThread(threadId));
     },
-    threadList: async () => listChats(await (await starting).supervisor.client.listThreads()).map(summarizeThread),
+    threadList: async () => listChats(await (await readyClient()).listThreads()).map(summarizeThread),
     threadFork: async (threadId, lastTurnId) => {
-      const { client } = (await starting).supervisor;
+      const client = await readyClient();
       return client.forkThread(threadId, lastTurnId, await client.defaultModelId());
     },
     chooseDiffFolder: async () => {
@@ -124,8 +126,8 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
     diffRead: (folder) => runGitDiff({ folder, base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
-    turnStart: async (threadId, question, contextText) => (await starting).supervisor.client.startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),
-    turnInterrupt: async (threadId, turnId) => (await starting).supervisor.client.interruptTurn(threadId, turnId),
+    turnStart: async (threadId, question, contextText) => (await readyClient()).startTurn(threadId, { question, context: contextText === null ? null : { text: contextText } }),
+    turnInterrupt: async (threadId, turnId) => (await readyClient()).interruptTurn(threadId, turnId),
   });
 }
 

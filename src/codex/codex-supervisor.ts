@@ -33,6 +33,8 @@ export class CodexSupervisor {
   private readonly restartTimes: Array<number> = [];
   private state: State = "stopped";
   private session: SupervisedSession | null = null;
+  private failure: Error | null = null;
+  private readonly waiters: Array<Readonly<{ resolve: (client: CodexClient) => void; reject: (error: Error) => void }>> = [];
 
   constructor(options: CodexSupervisorOptions) {
     this.options = options;
@@ -45,6 +47,25 @@ export class CodexSupervisor {
     return this.session.client;
   }
 
+  /**
+   * The running client, waiting through a restart. Requests use this, so a crash that is recovered in seconds is not
+   * seen by the window; it rejects when the app-server has not started, was stopped, or could not be restarted.
+   */
+  ready(): Promise<CodexClient> {
+    if (this.state === "running" && this.session !== null) return Promise.resolve(this.session.client);
+    if (this.state === "restarting") return new Promise((resolve, reject) => void this.waiters.push({ resolve, reject }));
+    if (this.state === "failed" && this.failure !== null) return Promise.reject(this.failure);
+    return Promise.reject(new Error("Codex is not running; the app-server has not started or was stopped"));
+  }
+
+  private settleWaiters(outcome: Readonly<{ client: CodexClient }> | Readonly<{ error: Error }>): void {
+    const waiting = this.waiters.splice(0);
+    for (const waiter of waiting) {
+      if ("client" in outcome) waiter.resolve(outcome.client);
+      else waiter.reject(outcome.error);
+    }
+  }
+
   async start(): Promise<void> {
     this.attach(await this.options.startSession());
     this.state = "running";
@@ -52,6 +73,7 @@ export class CodexSupervisor {
 
   async stop(): Promise<void> {
     this.state = "stopped";
+    this.settleWaiters({ error: new Error("Codex is not running; the app-server has not started or was stopped") });
     await this.session?.process.stop();
   }
 
@@ -79,6 +101,7 @@ export class CodexSupervisor {
       this.attach(session);
       for (const threadId of threads) await session.client.resumeThread(threadId, dead.client.modelOf(threadId));
       this.state = "running";
+      this.settleWaiters({ client: session.client });
       this.options.log(`restarted codex and resumed ${threads.length} thread(s)`);
     } catch (error) {
       this.fail(error instanceof Error ? error : new Error(String(error)));
@@ -95,6 +118,8 @@ export class CodexSupervisor {
 
   private fail(error: Error): void {
     this.state = "failed";
+    this.failure = error;
+    this.settleWaiters({ error });
     this.options.onRestartFailed(error);
   }
 }
