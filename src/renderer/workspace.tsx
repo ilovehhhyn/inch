@@ -40,6 +40,9 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
   const [mainThread, setMainThread] = useState<ThreadId | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const openingSideChats = useRef(new Set<ThreadId>());
+  /** The newest layout, and the queue that applies changes to it one at a time, so overlapping saves never start from a stale copy. */
+  const latestLayout = useRef<Layout | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const mainView = useSyncExternalStore(store.subscribe, () => (mainThread === null ? EMPTY_THREAD : store.view(mainThread)));
 
   const report = useCallback(
@@ -51,18 +54,23 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
   );
   const sender = useSender(api, store, tracker, report);
 
+  const applyLayout = useCallback((next: Layout): void => {
+    latestLayout.current = next;
+    setLayout(next);
+  }, []);
+
   const refreshThreads = useCallback(() => {
     api.threadList().then(setThreads, (error: unknown) => setProblem(`Could not list chats: ${messageOf(error)}`));
   }, [api]);
 
   useEffect(() => {
     refreshThreads();
-    api.layoutRead().then(setLayout, (error: unknown) => setProblem(`Could not read the saved layout: ${messageOf(error)}`));
+    api.layoutRead().then(applyLayout, (error: unknown) => setProblem(`Could not read the saved layout: ${messageOf(error)}`));
     return api.onProviderEvent((event) => {
       store.apply(event);
       if (event.type === "completed") refreshThreads();
     });
-  }, [api, store, refreshThreads]);
+  }, [api, store, refreshThreads, applyLayout]);
 
   const mainTurnIds = useMemo(() => new Set(mainView.messages.map((message) => message.turnId)), [mainView.messages]);
   const visibleSideChats = useMemo(() => (layout?.sideChats ?? []).filter((chat) => mainTurnIds.has(chat.forkedFromTurn)), [layout, mainTurnIds]);
@@ -79,11 +87,17 @@ export function Workspace({ api, draft, onDraftChange }: WorkspaceProps): ReactE
     }
   }, [api, store, visibleSideChats]);
 
-  async function saveLayout(change: (current: Layout) => Layout): Promise<void> {
-    if (layout === null) throw new Error("the saved layout could not be read, so Margin will not overwrite it; fix or delete layout.json in Margin's application support folder");
-    const next = change(layout);
-    await api.layoutWrite(next);
-    setLayout(next);
+  /** Applies `change` to the newest layout after every earlier save has finished, then writes it; the returned promise carries this save's own failure. */
+  function saveLayout(change: (current: Layout) => Layout): Promise<void> {
+    const run = saveQueue.current.then(async () => {
+      const current = latestLayout.current;
+      if (current === null) throw new Error("the saved layout could not be read, so Margin will not overwrite it; fix or delete layout.json in Margin's application support folder");
+      const next = change(current);
+      await api.layoutWrite(next);
+      applyLayout(next);
+    });
+    saveQueue.current = run.catch(() => undefined); // this save's failure goes to its caller through `run`; the queue itself must keep going
+    return run;
   }
 
   async function openSideChat(turnId: TurnId): Promise<void> {

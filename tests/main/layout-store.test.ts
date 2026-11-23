@@ -128,3 +128,23 @@ test("wrong_field_types_and_out_of_range_widths_are_rejected_on_read_and_on_writ
   }
   expect(await readFile(path, "utf8")).toBe(JSON.stringify(null)); // the last rejected write left the file alone
 });
+
+test("overlapping_writes_use_different_temporary_files_and_both_finish", async () => {
+  const path = await layoutPath();
+  const temporaries: Array<string> = [];
+  const io: LayoutIo = {
+    writeFile: async (target, data) => {
+      temporaries.push(target);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await writeFile(target, data);
+    },
+    rename,
+    readFile,
+    remove: async () => undefined,
+  };
+
+  await Promise.all([writeLayout(path, { ...SAVED, panelWidthPx: 500 }, io), writeLayout(path, { ...SAVED, panelWidthPx: 700 }, io)]);
+
+  expect(new Set(temporaries).size).toBe(2);
+  expect([500, 700]).toContain((await readLayout(path)).panelWidthPx);
+});

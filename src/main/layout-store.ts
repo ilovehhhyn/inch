@@ -12,6 +12,9 @@ export type LayoutIo = Readonly<{
 
 const NODE_IO: LayoutIo = { readFile, writeFile, rename, remove: (path) => rm(path, { force: true }) };
 
+/** Makes each write's temporary file name unique, so overlapping writes never share one. */
+let temporaryCounter = 0;
+
 function isMissingFile(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
@@ -37,7 +40,7 @@ export async function readLayout(path: string, io: LayoutIo = NODE_IO): Promise<
 /** Validates `layout`, writes it to a temporary file in the same folder, then renames it over `path`, so a crash leaves the old file whole. */
 export async function writeLayout(path: string, layout: Layout, io: LayoutIo = NODE_IO): Promise<void> {
   const checked = parseLayout(layout, path);
-  const temporary = `${path}.${process.pid}.tmp`;
+  const temporary = `${path}.${process.pid}.${temporaryCounter++}.tmp`;
   try {
     await io.writeFile(temporary, `${JSON.stringify(checked, null, 2)}\n`);
     await io.rename(temporary, path);

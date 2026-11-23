@@ -145,3 +145,25 @@ test("closing_a_side_chat_removes_it_from_the_saved_layout", async () => {
   expect(screen.queryByRole("region", { name: "Side chat" })).toBeNull();
   await waitFor(() => expect(api.layoutWrites.at(-1)?.sideChats).toEqual([]));
 });
+
+test("two_side_chats_opened_back_to_back_are_both_saved", async () => {
+  const api = apiWithOldChat();
+  const releases: Array<() => void> = [];
+  const forkIds = ["side-1", "side-2"];
+  api.threadFork = (threadId, lastTurnId) =>
+    new Promise((resolve) => {
+      const index = api.forks.length;
+      api.forks.push({ threadId, lastTurnId });
+      releases.push(() => resolve(asThreadId(forkIds[index] ?? "side-x")));
+    });
+  await openOldChat(api);
+  const buttons = screen.getAllByRole("button", { name: "Open side chat" });
+
+  await userEvent.click(buttons[0] as HTMLElement);
+  await userEvent.click(buttons[2] as HTMLElement);
+  await waitFor(() => expect(releases).toHaveLength(2));
+  await act(async () => releases.forEach((release) => release()));
+
+  await waitFor(() => expect(api.layoutWrites.at(-1)?.sideChats.map((chat) => chat.threadId)).toEqual(["side-1", "side-2"]));
+  expect(api.layoutWrites).toHaveLength(2);
+});
