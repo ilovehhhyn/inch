@@ -26,8 +26,10 @@ export const PDF_EXTRACT_TIMEOUT_MS = 30 * 1000;
 export type AttachmentStore = Readonly<{
   /** Classifies by content, checks the size, then copies the bytes under the file's own name; a rejected file leaves nothing on disk. */
   add: (file: Readonly<{ name: string; bytes: Uint8Array }>) => Promise<Attachment>;
-  /** Removes a staged file the user took off the message. */
+  /** Removes a file the user took off the message: a staged one, or one that a send adopted but the provider refused. A file of a sent message cannot be removed. */
   discard: (id: string) => Promise<void>;
+  /** Marks adopted files as part of a message that was sent; from then on they stay. */
+  commit: (ids: ReadonlyArray<string>) => void;
   /** Moves the named staged files into the chat's folder and returns them; the same ids for the same chat return the same files again, so a retry works. */
   adopt: (chatId: ThreadId, ids: ReadonlyArray<string>) => Promise<ReadonlyArray<Attachment>>;
 }>;
@@ -46,7 +48,7 @@ export async function clearStagedAttachments(directory: string): Promise<void> {
 export function createAttachmentStore(options: AttachmentStoreOptions): AttachmentStore {
   const createId = options.createId ?? randomUUID;
   const staged = new Map<string, Attachment>();
-  const adopted = new Map<string, Readonly<{ chatId: ThreadId; attachment: Attachment }>>();
+  const adopted = new Map<string, Readonly<{ chatId: ThreadId; attachment: Attachment; isCommitted: boolean }>>();
 
   return {
     async add({ name: fullName, bytes }) {
@@ -68,9 +70,21 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
       return attachment;
     },
     async discard(id) {
-      if (!staged.has(id)) throw new Error(`attachment \`${id}\` is not attached; there is nothing to remove`);
+      const owner = adopted.get(id);
+      if (owner?.isCommitted === true) throw new Error(`attachment \`${id}\` belongs to a message that was sent; it cannot be removed`);
+      if (owner === undefined && !staged.has(id)) throw new Error(`attachment \`${id}\` is not attached; there is nothing to remove`);
+      const folder = owner === undefined ? join(options.directory, STAGING_FOLDER, id) : join(options.directory, owner.chatId, id);
       staged.delete(id);
-      await rm(join(options.directory, STAGING_FOLDER, id), { recursive: true, force: true });
+      adopted.delete(id);
+      await rm(folder, { recursive: true, force: true });
+    },
+    commit(ids) {
+      const missing = ids.find((id) => !adopted.has(id));
+      if (missing !== undefined) throw new Error(`attachment \`${missing}\` was not adopted by a send; there is nothing to commit`);
+      for (const id of ids) {
+        const owner = adopted.get(id);
+        if (owner !== undefined) adopted.set(id, { ...owner, isCommitted: true });
+      }
     },
     async adopt(chatId, ids) {
       requireSafeChatId(chatId);
@@ -79,7 +93,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
       if (repeated !== undefined) throw new Error(`attachment \`${repeated}\` is listed twice; list each file once`);
       for (const id of ids) {
         const owner = adopted.get(id);
-        if (owner !== undefined && owner.chatId !== chatId) throw new Error(`attachment \`${id}\` belongs to another chat; attach the file again`);
+        if (owner !== undefined && owner.chatId !== chatId && owner.isCommitted) throw new Error(`attachment \`${id}\` belongs to a message that was sent; attach the file again`);
         if (owner === undefined && !staged.has(id)) throw new Error(`attachment \`${id}\` is not attached; attach the file again`);
       }
       const moved: Array<Readonly<{ from: string; to: string }>> = [];
@@ -87,13 +101,13 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
       try {
         for (const id of ids) {
           const owner = adopted.get(id);
-          if (owner !== undefined) {
+          if (owner?.chatId === chatId) {
             result.push(owner.attachment);
             continue;
           }
-          const attachment = staged.get(id);
+          const attachment = owner?.attachment ?? staged.get(id);
           if (attachment === undefined) throw new Error(`attachment \`${id}\` is not attached; attach the file again`);
-          const from = join(options.directory, STAGING_FOLDER, id);
+          const from = owner === undefined ? join(options.directory, STAGING_FOLDER, id) : join(options.directory, owner.chatId, id);
           const to = join(options.directory, chatId, id);
           await mkdir(join(options.directory, chatId), { recursive: true });
           await rename(from, to);
@@ -106,7 +120,7 @@ export function createAttachmentStore(options: AttachmentStoreOptions): Attachme
       }
       for (const attachment of result) {
         staged.delete(attachment.id);
-        adopted.set(attachment.id, { chatId, attachment });
+        adopted.set(attachment.id, { chatId, attachment, isCommitted: adopted.get(attachment.id)?.isCommitted ?? false });
       }
       return result;
     },

@@ -29,6 +29,7 @@ import { readAssumedMicrophoneAccess } from "./microphone-access";
 import { createSafeStorageSecretStore } from "./secret-store";
 import { appendLatencyRecord } from "./metrics-store";
 import { createSpeechService, resolveWhisperBinary, resolveWhisperModel } from "./speech/speech-service";
+import { createTurnStarter } from "./turn-starter";
 import { createSupervisedCodexProvider } from "./supervised-codex-provider";
 
 /** Read once, before the variables are removed: the address of a fake Anthropic service in the end-to-end tests. */
@@ -182,6 +183,7 @@ async function startCodex(): Promise<StartedCodex> {
 function registerHandlers(started: Promise<StartedCodex>): void {
   const choices = createChoiceStore(choicesPath());
   const attachments = createAttachmentStore({ directory: attachmentsDirectory() });
+  const startTurn = createTurnStarter({ providerFor, choices, attachments });
   /** The running Codex client; a request made during a restart waits for it instead of failing. */
   const readyClient = async () => (await started).supervisor.ready();
   for (const provider of Object.values(providers)) provider.onEvent(sendProviderEvent);
@@ -224,12 +226,7 @@ function registerHandlers(started: Promise<StartedCodex>): void {
     diffRead: async (folder) => runGitDiff({ folder: requireSavedDiffFolder(folder, (await readLayout(layoutPath())).diffFolder), base: "HEAD" }),
     layoutRead: () => readLayout(layoutPath()),
     layoutWrite: (layout) => writeLayout(layoutPath(), layout),
-    turnStart: async (provider, threadId, question, context, choice, attachmentIds) => {
-      const adopted = await attachments.adopt(threadId, attachmentIds);
-      const turnId = await providerFor(provider).startTurn(threadId, { question, context, model: choice.model, reasoning: choice.reasoning, attachments: adopted });
-      await choices.write(threadId, choice);
-      return turnId;
-    },
+    turnStart: startTurn,
     turnInterrupt: (provider, threadId, turnId) => providerFor(provider).interruptTurn(threadId, turnId),
     metricsAppend: (record) => appendLatencyRecord(metricsPath(), record),
   });

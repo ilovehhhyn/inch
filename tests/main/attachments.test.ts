@@ -81,12 +81,13 @@ test("adopt_with_one_unknown_id_moves_nothing", async () => {
   expect(await filesUnder(directory)).toEqual(["pending/id-1/train.py"]);
 });
 
-test("an_attachment_that_belongs_to_another_chat_cannot_be_adopted", async () => {
+test("an_attachment_of_a_sent_message_cannot_be_adopted_by_another_chat", async () => {
   const { store } = await setup();
   const added = await store.add({ name: "train.py", bytes: await fixture("train.py") });
   await store.adopt(CHAT, [added.id]);
+  store.commit([added.id]);
 
-  await expect(store.adopt(asThreadId("chat-2"), [added.id])).rejects.toThrow("attachment `id-1` belongs to another chat; attach the file again");
+  await expect(store.adopt(asThreadId("chat-2"), [added.id])).rejects.toThrow("attachment `id-1` belongs to a message that was sent; attach the file again");
 });
 
 test("more_than_ten_attachments_are_refused_before_any_move", async () => {
@@ -201,4 +202,44 @@ test("a_bytes_that_pdfjs_cannot_parse_is_an_error_naming_the_file", async () => 
   const added = await store.add({ name: "broken.pdf", bytes: new TextEncoder().encode("%PDF-1.4\nnot really a pdf") });
 
   await expect(createAttachmentContent().extractPdfText(added)).rejects.toThrow("cannot read `broken.pdf` as text");
+});
+
+test("a_file_adopted_by_a_send_that_failed_can_still_be_discarded", async () => {
+  const { directory, store } = await setup();
+  const added = await store.add({ name: "pixel.png", bytes: await fixture("pixel.png") });
+  await store.adopt(CHAT, [added.id]);
+
+  await store.discard(added.id);
+
+  expect(await filesUnder(directory)).toEqual([]);
+  await expect(store.adopt(CHAT, [added.id])).rejects.toThrow("is not attached");
+});
+
+test("a_file_adopted_by_a_send_that_failed_moves_with_the_next_send_in_another_chat", async () => {
+  const { directory, store } = await setup();
+  const added = await store.add({ name: "pixel.png", bytes: await fixture("pixel.png") });
+  await store.adopt(CHAT, [added.id]);
+
+  const moved = await store.adopt(asThreadId("chat-2"), [added.id]);
+
+  expect(moved.map((attachment) => attachment.storedPath)).toEqual([join(directory, "chat-2", "id-1", "pixel.png")]);
+  expect(await filesUnder(directory)).toEqual(["chat-2/id-1/pixel.png"]);
+});
+
+test("a_file_of_a_sent_message_cannot_be_discarded_and_stays_on_disk", async () => {
+  const { directory, store } = await setup();
+  const added = await store.add({ name: "pixel.png", bytes: await fixture("pixel.png") });
+  await store.adopt(CHAT, [added.id]);
+  store.commit([added.id]);
+
+  await expect(store.discard(added.id)).rejects.toThrow("attachment `id-1` belongs to a message that was sent; it cannot be removed");
+
+  expect(await filesUnder(directory)).toEqual(["chat-1/id-1/pixel.png"]);
+});
+
+test("committing_an_id_that_was_never_adopted_is_an_error", async () => {
+  const { store } = await setup();
+  const added = await store.add({ name: "pixel.png", bytes: await fixture("pixel.png") });
+
+  expect(() => store.commit([added.id])).toThrow("attachment `id-1` was not adopted by a send");
 });
