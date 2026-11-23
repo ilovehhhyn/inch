@@ -3,6 +3,7 @@ import type { AccountSummary, AuthEvent, LoginKind, LoginStarted } from "../../s
 import { DEFAULT_LAYOUT, type Layout } from "../../src/shared/layout";
 import type { MarginApi, StartupStatus } from "../../src/shared/ipc-contract";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../../src/shared/provider-events";
+import type { StartupErrorInfo } from "../../src/shared/startup-error";
 import type { HistoryMessage, ThreadSummary } from "../../src/shared/thread-history";
 
 export const SIGNED_IN_CHATGPT: AccountSummary = { signedIn: true, accountType: "chatgpt", planType: "plus" };
@@ -30,6 +31,7 @@ export class FakeMarginApi implements MarginApi {
   readonly layoutWrites: Array<Layout> = [];
   private turnCounter = 0;
   private readonly handlers = new Set<(event: AuthEvent) => void>();
+  private readonly faultHandlers = new Set<(info: StartupErrorInfo) => void>();
   private readonly providerHandlers = new Set<(event: ProviderEvent) => void>();
 
   startupStatus = async (): Promise<StartupStatus> => this.startup;
@@ -99,6 +101,17 @@ export class FakeMarginApi implements MarginApi {
       this.providerHandlers.delete(handler);
     };
   };
+
+  onFault = (handler: (info: StartupErrorInfo) => void): (() => void) => {
+    this.faultHandlers.add(handler);
+    return () => {
+      this.faultHandlers.delete(handler);
+    };
+  };
+
+  emitFault(info: StartupErrorInfo): void {
+    for (const handler of this.faultHandlers) handler(info);
+  }
 
   emitProvider(event: ProviderEvent): void {
     for (const handler of this.providerHandlers) handler(event);

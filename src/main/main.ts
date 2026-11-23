@@ -9,7 +9,7 @@ import { CodexSupervisor } from "../codex/codex-supervisor";
 import type { AuthEvent } from "../shared/auth";
 import { IPC_CHANNELS, type StartupStatus } from "../shared/ipc-contract";
 import type { ProviderEvent } from "../shared/provider-events";
-import { StartupError } from "../shared/startup-error";
+import { StartupError, type StartupErrorInfo } from "../shared/startup-error";
 import { buildCodexEnvironment } from "./codex-environment";
 import { locateCodex } from "./codex-locator";
 import { startCodexSession } from "./codex-session";
@@ -46,6 +46,10 @@ function sendToWindows(event: AuthEvent): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.authChanged, event);
 }
 
+function sendFault(info: StartupErrorInfo): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.fault, info);
+}
+
 function sendProviderEvent(event: ProviderEvent): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(IPC_CHANNELS.providerEvent, event);
 }
@@ -71,6 +75,7 @@ async function startCodex(): Promise<StartedCodex> {
     startSession: () => startCodexSession({ codexPath: located.codexPath, env, appVersion: app.getVersion(), openExternal: (url) => shell.openExternal(url), log, emptyWorkspacePath }),
     onSessionStart: (client) => {
       client.onAccountEvent(sendToWindows);
+      client.onFault(sendFault);
       client.onLoginCompleted((event) => sendToWindows({ type: "loginCompleted", success: event.success, error: event.error }));
     },
     onEvent: sendProviderEvent,

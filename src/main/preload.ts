@@ -2,6 +2,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 import type { AuthEvent } from "../shared/auth";
+import type { StartupErrorInfo } from "../shared/startup-error";
 import type { ProviderEvent } from "../shared/provider-events";
 import { IPC_CHANNELS, type MarginApi } from "../shared/ipc-contract";
 
@@ -23,6 +24,13 @@ const api: MarginApi = {
   layoutWrite: (layout) => ipcRenderer.invoke(IPC_CHANNELS.layoutWrite, layout),
   turnStart: (threadId, question, contextText) => ipcRenderer.invoke(IPC_CHANNELS.turnStart, threadId, question, contextText),
   turnInterrupt: (threadId, turnId) => ipcRenderer.invoke(IPC_CHANNELS.turnInterrupt, threadId, turnId),
+  onFault: (handler) => {
+    const listener = (_event: IpcRendererEvent, info: StartupErrorInfo): void => handler(info);
+    ipcRenderer.on(IPC_CHANNELS.fault, listener);
+    return () => {
+      ipcRenderer.off(IPC_CHANNELS.fault, listener);
+    };
+  },
   onProviderEvent: (handler) => {
     const listener = (_event: IpcRendererEvent, providerEvent: ProviderEvent): void => handler(providerEvent);
     ipcRenderer.on(IPC_CHANNELS.providerEvent, listener);

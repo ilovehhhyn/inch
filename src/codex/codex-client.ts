@@ -1,6 +1,7 @@
 // Gives typed methods over the app-server connection: initialize, account, sign-in, threads and turns.
 import { isAbsolute } from "node:path";
 
+import type { StartupErrorInfo } from "../shared/startup-error";
 import { asThreadId, asTurnId, type ProviderEvent, type ThreadId, type TurnId } from "../shared/provider-events";
 import type { RenderedContext } from "../shared/rendered-context";
 import type { AccountSummary, AccountType, AuthEvent, LoginKind, LoginStarted } from "../shared/auth";
@@ -119,6 +120,7 @@ export class CodexClient {
   private readonly emptyWorkspacePath: string;
   private readonly resumable = new Set<ThreadId>();
   private readonly turns = new Map<TurnId, ThreadId>();
+  private readonly faultHandlers = new Set<(info: StartupErrorInfo) => void>();
   private readonly models = new Map<ThreadId, string>();
   private readonly forkParents = new Map<string, string | null>();
 
@@ -221,9 +223,28 @@ export class CodexClient {
     });
   }
 
+  /** Receives problems that cannot be tied to a request, such as an account mode Margin cannot show; the window shows them in full. */
+  onFault(handler: (info: StartupErrorInfo) => void): Unsubscribe {
+    this.faultHandlers.add(handler);
+    return () => {
+      this.faultHandlers.delete(handler);
+    };
+  }
+
+  private fault(error: unknown, fix: string): void {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const handler of this.faultHandlers) handler({ kind: "codex-protocol", message, fix });
+  }
+
   onAccountEvent(handler: (event: AuthEvent) => void): Unsubscribe {
     return this.connection.onNotification((notification) => {
-      const event = toAccountEvent(notification);
+      let event: AuthEvent | null;
+      try {
+        event = toAccountEvent(notification);
+      } catch (error) {
+        this.fault(error, UNSUPPORTED_ACCOUNT_FIX);
+        return;
+      }
       if (event !== null) handler(event);
     });
   }
@@ -299,11 +320,18 @@ export class CodexClient {
     await this.connection.request("turn/interrupt", { threadId, turnId });
   }
 
+  /** A `turn/completed` that cannot be mapped fails that turn with the reason, so the window never waits for it. */
   onProviderEvent(handler: (event: ProviderEvent) => void): Unsubscribe {
     return this.connection.onNotification((notification) => {
-      const event = toProviderEvent(notification);
+      let event: ProviderEvent | null;
+      try {
+        event = toProviderEvent(notification);
+      } catch (error) {
+        if (notification.method !== "turn/completed") throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        event = { type: "completed", threadId: asThreadId(notification.params.threadId), turnId: asTurnId(notification.params.turn.id), status: "failed", error: message };
+      }
       if (event !== null) handler(event);
     });
   }
 }
-

@@ -25,6 +25,7 @@ export const IPC_CHANNELS = {
   turnStart: "turn:start",
   turnInterrupt: "turn:interrupt",
   providerEvent: "provider:event",
+  fault: "startup:fault",
 } as const;
 
 export type StartupStatus = Readonly<{ ok: true; codexVersion: string }> | Readonly<{ ok: false; error: StartupErrorInfo }>;
@@ -54,5 +55,7 @@ export type MarginApi = Readonly<{
   /** `contextText` is a finished MARGIN SCREEN CONTEXT block, or null for a plain message. */
   turnStart(threadId: ThreadId, question: string, contextText: string | null): Promise<TurnId>;
   turnInterrupt(threadId: ThreadId, turnId: TurnId): Promise<void>;
+  /** A problem found after start-up that the window must show in full. */
+  onFault(handler: (info: StartupErrorInfo) => void): () => void;
   onProviderEvent(handler: (event: ProviderEvent) => void): () => void;
 }>;

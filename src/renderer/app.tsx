@@ -26,6 +26,8 @@ export function App({ api }: AppProps): ReactElement | null {
     api.startupStatus().then(setStatus, (error: unknown) => setStatus(crashStatus(error)));
   }, [api]);
 
+  useEffect(() => api.onFault((error) => setStatus({ ok: false, error })), [api]);
+
   const isReady = status?.ok === true;
   useEffect(() => {
     if (!isReady) return undefined;

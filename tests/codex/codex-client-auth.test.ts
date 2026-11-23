@@ -194,3 +194,35 @@ test("cancel_login_and_logout_send_their_requests", async () => {
     ["account/logout", undefined],
   ]);
 });
+
+test("an_account_mode_margin_cannot_show_becomes_a_fault_not_an_uncaught_exception", async () => {
+  const { fake, client } = setup();
+  const faults: Array<unknown> = [];
+  const events: Array<unknown> = [];
+  client.onFault((info) => void faults.push(info));
+  client.onAccountEvent((event) => void events.push(event));
+
+  fake.emit({ method: "account/updated", params: { authMode: "chatgptAuthTokens", planType: null } });
+  await settle();
+
+  expect(events).toEqual([]);
+  expect(faults).toEqual([
+    { kind: "codex-protocol", message: "unsupported account type `chatgptAuthTokens`; sign out of Codex and sign in with ChatGPT or an OpenAI API key", fix: "sign out of Codex and sign in with ChatGPT or an OpenAI API key" },
+  ]);
+});
+
+test("a_turn_completed_notification_with_an_unknown_status_fails_that_turn_instead_of_crashing_the_process", async () => {
+  const { fake, client } = setup();
+  const events: Array<unknown> = [];
+  client.onProviderEvent((event) => void events.push(event));
+
+  fake.emit({
+    method: "turn/completed",
+    params: { threadId: "t1", turn: { id: "u1", items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null } },
+  });
+  await settle();
+
+  expect(events).toEqual([
+    { type: "completed", threadId: "t1", turnId: "u1", status: "failed", error: "turn/completed arrived with status `inProgress`; the app-server protocol changed, regenerate the bindings" },
+  ]);
+});
