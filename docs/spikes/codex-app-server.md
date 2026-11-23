@@ -11,8 +11,9 @@ This note records what was measured against `codex-cli 0.146.0` on one Mac (Appl
 
 ## Method
 
-- The probe starts `codex app-server`, sends `initialize` and `initialized`, and starts two non-ephemeral threads with `sandbox: "read-only"`, `approvalPolicy: "never"` and a fresh empty working directory.
+- The probe starts `codex app-server`, sends `initialize` and `initialized`, and starts two ephemeral threads (`ephemeral: true`, as `spikes/probe-turn.mjs` sets it in `latency` mode) with `sandbox: "read-only"`, `approvalPolicy: "never"` and a fresh empty working directory.
 - Each thread gets 10 turns of the prompt `Reply with the single word OK.` Turns alternate between the two threads, so a change in server load affects both. The first thread sends only the prompt. The second thread sends a 12,000-character context text item before the prompt on every turn, so its history grows as it would in use.
+- Margin's own threads are not ephemeral, because an ephemeral thread cannot be resumed after a crash. The rollout writes of a non-ephemeral thread are therefore not in these latency numbers; they were not measured.
 - The probe waits 4 s between turns, because back-to-back turns returned HTTP 429 after about five turns.
 - The model is `gpt-5.6-sol`, the default in `model/list`. The user's `~/.codex/config.toml` names `gpt-6-astra`, which is not in `model/list`. Turns on that model returned 429 every time, so every thread must pass `model` explicitly.
 - Times are milliseconds from the moment `turn/start` was sent.
