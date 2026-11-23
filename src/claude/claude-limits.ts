@@ -5,7 +5,7 @@ const MEGABYTE = 1024 * 1024;
 
 /**
  * 32 MB per request (bundled Claude API reference, "Document & File Input"). 5 MB per image is the Anthropic vision limit,
- * applied here to the file's own bytes; it is not in the bundled reference and was not tried against the API.
+ * applied here to the base64 text that is sent (ruling E#4, "after encoding"); it is not in the bundled reference and was not tried against the API.
  */
 export const CLAUDE_LIMITS = { imageBytes: 5 * MEGABYTE, requestBytes: 32 * MEGABYTE } as const;
 
@@ -27,8 +27,9 @@ export function requireWithinClaudeLimits(historyBytes: number, attachments: Rea
   const limit = CLAUDE_LIMITS.requestBytes;
   if (historyBytes > limit) throw new Error(`this chat already holds ${megabytes(historyBytes)}, which is the whole ${megabytes(limit)} limit of one request; start a new chat`);
   for (const attachment of attachments) {
-    if (attachment.kind === "image" && attachment.bytes > CLAUDE_LIMITS.imageBytes) {
-      throw new Error(`cannot send image \`${attachment.name}\` to Claude; an image may be at most 5 MB (${CLAUDE_LIMITS.imageBytes.toLocaleString("en-US")} bytes) and this one is ${attachment.bytes.toLocaleString("en-US")} bytes; resize it or attach a smaller one`);
+    const encoded = base64Bytes(attachment.bytes);
+    if (attachment.kind === "image" && encoded > CLAUDE_LIMITS.imageBytes) {
+      throw new Error(`cannot send image \`${attachment.name}\` to Claude; an image may be at most 5 MB after base64 (${CLAUDE_LIMITS.imageBytes.toLocaleString("en-US")} characters) and this one is ${encoded.toLocaleString("en-US")} after base64 (${attachment.bytes.toLocaleString("en-US")} bytes on disk); resize it or attach a smaller one`);
     }
   }
   let total = historyBytes;

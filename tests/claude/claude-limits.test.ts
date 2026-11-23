@@ -18,9 +18,16 @@ test("base64_grows_the_bytes_to_four_thirds_rounded_up_to_whole_groups", () => {
   expect([0, 1, 2, 3, 4, 3000].map(base64Bytes)).toEqual([0, 4, 4, 4, 8, 4000]);
 });
 
-test("an_image_is_accepted_at_five_megabytes_and_refused_one_byte_over_naming_the_file", () => {
-  expect(() => requireWithinClaudeLimits(0, [file("image", "ok.png", 5 * MB)])).not.toThrow();
-  expect(() => requireWithinClaudeLimits(0, [file("image", "big.png", 5 * MB + 1)])).toThrow("cannot send image `big.png` to Claude; an image may be at most 5 MB (5,242,880 bytes) and this one is 5,242,881 bytes; resize it or attach a smaller one");
+test("an_image_is_accepted_when_its_base64_is_exactly_five_megabytes_and_refused_one_byte_over_naming_the_file", () => {
+  const largestFile = 3 * ((5 * MB) / 4); // 3,932,160 bytes: base64 is exactly 5 MB
+
+  expect(base64Bytes(largestFile)).toBe(5 * MB);
+  expect(() => requireWithinClaudeLimits(0, [file("image", "ok.png", largestFile)])).not.toThrow();
+  expect(() => requireWithinClaudeLimits(0, [file("image", "big.png", largestFile + 1)])).toThrow("cannot send image `big.png` to Claude; an image may be at most 5 MB after base64 (5,242,880 characters) and this one is 5,242,884 after base64 (3,932,161 bytes on disk); resize it or attach a smaller one");
+});
+
+test("an_image_that_is_under_five_megabytes_on_disk_but_over_it_after_base64_is_refused", () => {
+  expect(() => requireWithinClaudeLimits(0, [file("image", "mid.png", 4 * MB)])).toThrow("cannot send image `mid.png` to Claude");
 });
 
 test("a_pdf_that_is_small_before_base64_but_too_big_after_it_is_refused", () => {
