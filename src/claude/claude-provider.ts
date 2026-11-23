@@ -12,7 +12,7 @@ import type { DisplayMessage, ThreadSummary } from "../shared/thread-history";
 import { betasFor, claudeAccountOf, createClaudeClient, type ClaudeClientOptions, type ClaudeCredential } from "./claude-credentials";
 import { requireWithinClaudeLimits } from "./claude-limits";
 import { contentForReplay } from "./replay-content";
-import { CLAUDE_EFFORTS, parseClaudeEffort, replayMessages, type ClaudeEffort, type ClaudeThreadFile, type ClaudeThreadStore, type StoredMessage } from "./claude-thread-store";
+import { CLAUDE_EFFORTS, parseClaudeEffort, questionOf, replayMessages, type ClaudeEffort, type ClaudeThreadFile, type ClaudeThreadStore, type StoredMessage } from "./claude-thread-store";
 
 export const CLAUDE_DEFAULT_MODEL = "claude-opus-5-5";
 /** Provisional: the plan picks the lower effort unless its answers are wrong on the latency probe, and the probe has not run (docs/spikes/claude.md). */
@@ -29,8 +29,6 @@ export const NOT_SIGNED_IN = "Claude is not signed in; sign in from the Accounts
 export const STOPPED_BEFORE_ANY_ANSWER = "(stopped before any answer)";
 const UNREACHABLE = "Cannot reach Anthropic. Check the connection";
 const REFUSED = "Claude declined to answer this";
-const TITLE_MAX_CHARS = 60;
-const EMPTY_TITLE = "New chat";
 
 export type ClaudeProviderOptions = Readonly<{
   /** The credential to use now; null when signed out. */
@@ -53,13 +51,6 @@ type Outcome = Readonly<{ status: "completed" | "interrupted" | "refused"; error
 function textOf(content: StoredMessage["content"]): string {
   if (typeof content === "string") return content;
   return content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
-}
-
-/** The question of a stored user message: its last text block, because a context block, when present, comes first. */
-function questionOf(content: StoredMessage["content"]): string {
-  if (typeof content === "string") return content;
-  const texts = content.flatMap((block) => (block.type === "text" ? [block.text] : []));
-  return texts.at(-1) ?? "";
 }
 
 const IMAGE_MEDIA_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
@@ -96,12 +87,6 @@ function attachmentsOf(content: StoredMessage["content"]): Array<AttachmentSumma
     const summary = parseAttachmentLabel(text.split("\n")[0] ?? "");
     return summary === null ? [] : [summary];
   });
-}
-
-function titleOf(file: ClaudeThreadFile): string {
-  const first = file.messages[0];
-  const title = first === undefined ? "" : (questionOf(first.content).split("\n")[0]?.trim().slice(0, TITLE_MAX_CHARS) ?? "");
-  return title === "" ? EMPTY_TITLE : title;
 }
 
 function describeFailure(error: unknown): Readonly<{ message: string; isAccountChange: boolean }> {
@@ -262,9 +247,13 @@ export function createClaudeProvider(options: ClaudeProviderOptions): ChatProvid
     },
     async listThreads(): Promise<ReadonlyArray<ThreadSummary>> {
       return (await options.store.list())
-        .filter((stored) => stored.file.forkedFrom === null && stored.file.turns.length > 0)
+        .filter((entry) => entry.kind === "unreadable" || (entry.forkedFrom === null && entry.hasTurns))
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
-        .map((stored) => ({ id: stored.file.threadId, provider: "claude", title: titleOf(stored.file), updatedAtSec: Math.floor(stored.updatedAtMs / 1000) }));
+        .map((entry): ThreadSummary => {
+          const updatedAtSec = Math.floor(entry.updatedAtMs / 1000);
+          if (entry.kind === "unreadable") return { id: entry.threadId, provider: "claude", title: `Unreadable chat ${entry.threadId.slice(0, 8)}`, updatedAtSec, problem: entry.problem };
+          return { id: entry.threadId, provider: "claude", title: entry.title, updatedAtSec };
+        });
     },
     onEvent(handler) {
       handlers.add(handler);

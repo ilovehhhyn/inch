@@ -20,11 +20,18 @@ export function Sidebar({ threads, selectedId, onSelect, onNewChat, onManageAcco
       <button type="button" className="side-item" onClick={onNewChat}>
         + New chat
       </button>
-      {threads.map((thread) => (
-        <button key={thread.id} type="button" className={thread.id === selectedId ? "side-item on" : "side-item"} aria-current={thread.id === selectedId ? "page" : undefined} onClick={() => onSelect(thread.id)}>
-          {thread.title}
-        </button>
-      ))}
+      {threads.map((thread) =>
+        thread.problem === undefined ? (
+          <button key={thread.id} type="button" className={thread.id === selectedId ? "side-item on" : "side-item"} aria-current={thread.id === selectedId ? "page" : undefined} onClick={() => onSelect(thread.id)}>
+            {thread.title}
+          </button>
+        ) : (
+          <div key={thread.id} className="side-item problem">
+            <span>{thread.title}</span>
+            <span className="side-problem" role="alert">{thread.problem}</span>
+          </div>
+        ),
+      )}
       <label className="read-aloud-setting">
         <input type="checkbox" checked={readAloud.isOn} onChange={(event) => readAloud.onChange(event.target.checked)} />
         Read spoken answers aloud

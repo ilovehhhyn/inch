@@ -93,6 +93,16 @@ body {
   color: var(--ink);
   font-weight: 500;
 }
+.side-item.problem {
+  cursor: default;
+  white-space: normal;
+}
+.side-problem {
+  display: block;
+  font-size: 13px;
+  color: var(--diff-delete-sign);
+  word-break: break-word;
+}
 .main-col {
   flex: 1;
   min-width: 0;

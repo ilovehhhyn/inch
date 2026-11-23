@@ -15,7 +15,8 @@ export type DisplayMessage = Readonly<{
   servedBy?: string;
 }>;
 
-export type ThreadSummary = Readonly<{ id: ThreadId; provider: ProviderId; title: string; updatedAtSec: number }>;
+/** `problem` is set on the row of a chat whose file cannot be read; the window shows it and does not open the chat. */
+export type ThreadSummary = Readonly<{ id: ThreadId; provider: ProviderId; title: string; updatedAtSec: number; problem?: string }>;
 
 /** The messages of a forked thread that came after `forkedFromTurn`; the earlier ones are copies of the parent's turns. */
 export function messagesAfterTurn(history: ReadonlyArray<DisplayMessage>, forkedFromTurn: TurnId): ReadonlyArray<DisplayMessage> {

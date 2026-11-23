@@ -1,6 +1,6 @@
 // Invariant: a Claude chat sends the context block and the question as one user message, stores the assistant reply unchanged, keeps messages alternating through interrupts and errors, and maps each failure to one message.
 import Anthropic from "@anthropic-ai/sdk";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -413,6 +413,27 @@ test("the_chat_list_has_main_chats_only_newest_first_titled_by_their_first_quest
     [first, "claude", "First question"],
   ]);
   expect(chats[0]?.updatedAtSec).toBeGreaterThanOrEqual(chats[1]?.updatedAtSec ?? 0);
+});
+
+test("a_corrupt_chat_file_is_listed_as_a_row_with_its_problem_and_the_other_chats_still_list", async () => {
+  const directory = join(await mkdtemp(join(tmpdir(), "margin-claude-")), "claude-threads");
+  const store = createClaudeThreadStore(directory);
+  const fake = new FakeAnthropic().script({ kind: "answer", chunks: ["A"] });
+  let counter = 0;
+  const provider = createClaudeProvider({ credentials: async () => API_KEY, store, makeClient: () => fake.asClient(), createId: () => `id-${++counter}` });
+  const events: Array<ProviderEvent> = [];
+  provider.onEvent((event) => events.push(event));
+  const context: Setup = { provider, store, fake, events };
+  const good = await provider.startThread();
+  await runTurn(context, good, "Good question");
+  await writeFile(join(directory, "deadbeef-0000.json"), "{}");
+
+  const chats = await provider.listThreads();
+
+  expect(chats.map((chat) => chat.title).sort()).toEqual(["Good question", "Unreadable chat deadbeef"]);
+  const broken = chats.find((chat) => chat.id === "deadbeef-0000");
+  expect(broken?.problem).toContain(join(directory, "deadbeef-0000.json"));
+  expect(chats.find((chat) => chat.id === good)?.problem).toBeUndefined();
 });
 
 test("the_default_effort_is_the_provisional_low", () => {

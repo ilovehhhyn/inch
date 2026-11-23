@@ -13,6 +13,25 @@ import { FakeMarginApi } from "../fakes/fake-margin-api";
 const A = asThreadId("a");
 const B = asThreadId("b");
 
+test("a_chat_that_cannot_be_read_shows_its_problem_in_a_row_that_does_not_open", async () => {
+  const selected: Array<string> = [];
+  render(
+    <Sidebar
+      threads={[{ id: A, provider: "claude", title: "Unreadable chat aaaa", updatedAtSec: 2, problem: "Claude chat file /x/a.json must hold a JSON object; delete the file to remove this chat" }, { id: B, provider: "claude", title: "Good chat", updatedAtSec: 1 }]}
+      selectedId={null}
+      onSelect={(id) => selected.push(id)}
+      onNewChat={() => undefined}
+      onManageAccounts={() => undefined}
+      readAloud={{ isOn: false, onChange: () => undefined }}
+    />,
+  );
+
+  expect(screen.getByText(/Claude chat file \/x\/a.json must hold a JSON object/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: /Unreadable chat aaaa/ })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Good chat" }));
+  expect(selected).toEqual(["b"]);
+});
+
 test("the_sidebar_lists_every_chat_marks_the_open_one_and_reports_clicks", async () => {
   const selected: Array<string> = [];
   let newChats = 0;

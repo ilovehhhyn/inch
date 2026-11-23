@@ -1,5 +1,5 @@
 // Invariant: a Claude chat is one JSON file per thread, replaced atomically, read back exactly, and never accepted with unknown keys, another version or messages that break the user and assistant alternation.
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -41,7 +41,7 @@ test("a_write_leaves_only_the_thread_file_in_the_folder", async () => {
   await store.write(SAVED);
   await store.write({ ...SAVED, model: "claude-opus-5-5" });
 
-  expect(await readdir(directory)).toEqual([`${THREAD}.json`]);
+  expect((await readdir(directory)).sort()).toEqual([`${THREAD}.index.json`, `${THREAD}.json`]);
 });
 
 test("a_failed_rename_leaves_the_old_file_whole_and_no_temporary_file", async () => {
@@ -55,7 +55,7 @@ test("a_failed_rename_leaves_the_old_file_whole_and_no_temporary_file", async ()
 
   await expect(crashing.write({ ...SAVED, effort: "medium" })).rejects.toThrow("power cut between write and rename");
 
-  expect(await readdir(directory)).toEqual([`${THREAD}.json`]);
+  expect((await readdir(directory)).sort()).toEqual([`${THREAD}.index.json`, `${THREAD}.json`]);
   expect((await createClaudeThreadStore(directory).read(THREAD)).effort).toBe("low");
 });
 
@@ -132,27 +132,70 @@ test("a_thread_id_that_is_not_safe_in_a_file_name_is_rejected_before_any_path_is
   await expect(store.read(asThreadId("../../etc/passwd"))).rejects.toThrow("thread id `../../etc/passwd` must be letters, digits and dashes");
 });
 
-test("list_returns_every_file_with_its_modification_time_and_ignores_other_files", async () => {
+test("list_returns_every_chat_with_its_title_and_modification_time_and_ignores_other_files", async () => {
   const directory = await folder();
   const store = createClaudeThreadStore(directory);
   await store.write(SAVED);
-  await store.write({ ...SAVED, threadId: asThreadId("second-chat") });
+  await store.write({ ...SAVED, threadId: asThreadId("second-chat"), forkedFrom: THREAD });
   await writeFile(join(directory, "notes.txt"), "not a thread");
 
   const listed = await store.list();
 
-  expect(listed.map((entry) => entry.file.threadId).sort()).toEqual([THREAD, "second-chat"].sort());
+  expect(listed.map((entry) => [entry.threadId, entry.kind]).sort()).toEqual([[THREAD, "chat"], ["second-chat", "chat"]].sort());
+  expect(listed.find((entry) => entry.threadId === THREAD)).toMatchObject({ kind: "chat", title: "what is lr?", forkedFrom: null, hasTurns: true });
+  expect(listed.find((entry) => entry.threadId === "second-chat")).toMatchObject({ forkedFrom: THREAD });
   for (const entry of listed) expect(entry.updatedAtMs).toBeGreaterThan(0);
 });
 
-test("list_with_no_folder_yet_is_empty_and_one_bad_file_fails_the_list_naming_it", async () => {
+test("list_with_no_folder_yet_is_empty", async () => {
   const parent = await folder();
+
   expect(await createClaudeThreadStore(join(parent, "claude-threads")).list()).toEqual([]);
+});
+
+test("one_bad_chat_file_becomes_an_unreadable_entry_naming_the_file_and_the_others_still_list", async () => {
+  const parent = await folder();
   await createClaudeThreadStore(parent).write(SAVED);
   await writeFile(join(parent, "broken.json"), "{}");
 
-  await expect(createClaudeThreadStore(parent).list()).rejects.toThrow(join(parent, "broken.json"));
+  const listed = await createClaudeThreadStore(parent).list();
+
+  const broken = listed.find((entry) => entry.threadId === "broken");
+  expect(broken).toMatchObject({ kind: "unreadable" });
+  expect(broken?.kind === "unreadable" ? broken.problem : "").toContain(join(parent, "broken.json"));
+  expect(listed.find((entry) => entry.threadId === THREAD)?.kind).toBe("chat");
   expect(await readFile(join(parent, `${THREAD}.json`), "utf8")).toContain(THREAD);
+});
+
+test("list_reads_only_the_small_index_so_a_chat_file_with_huge_content_is_never_parsed", async () => {
+  const directory = await folder();
+  const store = createClaudeThreadStore(directory);
+  await store.write(SAVED);
+  await writeFile(join(directory, `${THREAD}.json`), `{ this is not json ${"A".repeat(1024)}`); // opening this chat would fail; listing must not open it
+
+  const listed = await store.list();
+
+  expect(listed.map((entry) => [entry.threadId, entry.kind])).toEqual([[THREAD, "chat"]]);
+});
+
+test("a_chat_with_no_index_is_indexed_from_its_file_once_and_then_listed_from_the_index", async () => {
+  const directory = await folder();
+  const store = createClaudeThreadStore(directory);
+  await store.write(SAVED);
+  await rm(join(directory, `${THREAD}.index.json`));
+
+  expect((await store.list())[0]).toMatchObject({ kind: "chat", title: "what is lr?" });
+
+  expect(await readdir(directory)).toContain(`${THREAD}.index.json`);
+});
+
+test("an_index_without_its_chat_file_is_not_listed", async () => {
+  const directory = await folder();
+  const store = createClaudeThreadStore(directory);
+  await store.write(SAVED);
+  await rm(join(directory, `${THREAD}.json`));
+
+  expect(await store.list()).toEqual([]);
 });
 
 test("a_turn_with_servedBy_and_refused_is_read_back_and_other_values_are_rejected", async () => {

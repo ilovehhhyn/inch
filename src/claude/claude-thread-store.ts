@@ -41,15 +41,21 @@ export type ClaudeThreadFile = Readonly<{
   turns: ReadonlyArray<TurnRecord>;
 }>;
 
-export type StoredThread = Readonly<{ file: ClaudeThreadFile; updatedAtMs: number }>;
+/**
+ * One line of the chat list, read from the chat's small index file and never from its messages, which can hold megabytes
+ * of base64. A chat whose file cannot be indexed is listed as `unreadable` with the reason, so one bad file hides no other chat.
+ */
+export type ChatListEntry =
+  | Readonly<{ kind: "chat"; threadId: ThreadId; forkedFrom: ThreadId | null; title: string; hasTurns: boolean; updatedAtMs: number }>
+  | Readonly<{ kind: "unreadable"; threadId: ThreadId; problem: string; updatedAtMs: number }>;
 
 export type ClaudeThreadStore = Readonly<{
   /** Rejects when the chat is not stored or its file is invalid. */
   read: (threadId: ThreadId) => Promise<ClaudeThreadFile>;
   /** Validates, then replaces the chat's file atomically. */
   write: (file: ClaudeThreadFile) => Promise<void>;
-  /** Every stored chat; one invalid file fails the whole list so it is never skipped unseen. */
-  list: () => Promise<ReadonlyArray<StoredThread>>;
+  /** Every stored chat, sorted by id; each chat's problem stays in its own entry. */
+  list: () => Promise<ReadonlyArray<ChatListEntry>>;
 }>;
 
 export type ThreadStoreIo = Readonly<{ rename: (from: string, to: string) => Promise<void> }>;
@@ -58,6 +64,44 @@ const FILE_KEYS: ReadonlyArray<string> = ["version", "threadId", "forkedFrom", "
 const TURN_KEYS: ReadonlyArray<string> = ["turnId", "userMessageIndex", "servedBy", "refused"];
 const SAFE_THREAD_ID = /^[A-Za-z0-9-]+$/;
 const EXTENSION = ".json";
+/** `<id>.index.json` sits beside `<id>.json`; ids hold no dots, so the two names never collide. */
+const INDEX_EXTENSION = ".index.json";
+const INDEX_KEYS: ReadonlyArray<string> = ["version", "forkedFrom", "title", "hasTurns"];
+const TITLE_MAX_CHARS = 60;
+const EMPTY_TITLE = "New chat";
+
+/** The part of a chat the list shows; it is derived from the chat file and is rebuilt from it when missing or invalid. */
+type ChatIndex = Readonly<{ forkedFrom: ThreadId | null; title: string; hasTurns: boolean }>;
+
+/** The question of a stored user message: its last text block, because a context block, when present, comes first. */
+export function questionOf(content: StoredMessage["content"]): string {
+  if (typeof content === "string") return content;
+  const texts = content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+  return texts.at(-1) ?? "";
+}
+
+/** The first line of the chat's first question, cut to 60 characters; "New chat" when there is none. */
+export function titleOf(file: ClaudeThreadFile): string {
+  const first = file.messages[0];
+  const title = first === undefined ? "" : (questionOf(first.content).split("\n")[0]?.trim().slice(0, TITLE_MAX_CHARS) ?? "");
+  return title === "" ? EMPTY_TITLE : title;
+}
+
+function indexOf(file: ClaudeThreadFile): ChatIndex {
+  return { forkedFrom: file.forkedFrom, title: titleOf(file), hasTurns: file.turns.length > 0 };
+}
+
+function indexText(index: ChatIndex): string {
+  return `${JSON.stringify({ version: 1, ...index })}\n`;
+}
+
+function parseChatIndex(value: unknown): ChatIndex {
+  if (!isRecord(value)) throw new Error("index must hold a JSON object");
+  const unknown = Object.keys(value).find((key) => !INDEX_KEYS.includes(key));
+  const { version, forkedFrom, title, hasTurns } = value;
+  if (unknown !== undefined || version !== 1 || (forkedFrom !== null && typeof forkedFrom !== "string") || typeof title !== "string" || typeof hasTurns !== "boolean") throw new Error("not a version 1 chat index");
+  return { forkedFrom: forkedFrom === null ? null : asThreadId(forkedFrom), title, hasTurns };
+}
 
 function invalid(source: string, problem: string): Error {
   return new Error(`Claude chat file ${source} ${problem}`);
@@ -155,6 +199,20 @@ let temporaryCounter = 0;
 /** The store keeps its files in `directory`, which is created on the first write. */
 export function createClaudeThreadStore(directory: string, io: ThreadStoreIo = { rename }): ClaudeThreadStore {
   const pathOf = (threadId: string): string => join(directory, `${threadId}${EXTENSION}`);
+  const indexPathOf = (threadId: string): string => join(directory, `${threadId}${INDEX_EXTENSION}`);
+
+  /** Writes to a temporary file in the same folder, then renames it over `path`; a failure leaves `path` as it was. */
+  async function writeAtomically(path: string, text: string): Promise<void> {
+    await mkdir(directory, { recursive: true });
+    const temporary = `${path}.${process.pid}.${temporaryCounter++}.tmp`;
+    try {
+      await writeFile(temporary, text, "utf8");
+      await io.rename(temporary, path);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
+  }
 
   async function readFileAt(path: string, threadId: ThreadId): Promise<ClaudeThreadFile> {
     const text = await readFile(path, "utf8");
@@ -165,6 +223,31 @@ export function createClaudeThreadStore(directory: string, io: ThreadStoreIo = {
       throw invalid(path, "is not valid JSON; delete the file to remove this chat");
     }
     return parseClaudeThreadFile(value, path, threadId);
+  }
+
+  /** The index file's content, or null when it is missing or invalid; it is derived data, so the caller rebuilds it from the chat file. */
+  async function readIndex(path: string): Promise<ChatIndex | null> {
+    let text: string;
+    try {
+      text = await readFile(path, "utf8");
+    } catch (error) {
+      if (isMissingFile(error)) return null;
+      throw error;
+    }
+    try {
+      return parseChatIndex(JSON.parse(text));
+    } catch {
+      return null; // an unreadable index is rebuilt below, never trusted
+    }
+  }
+
+  async function indexFor(threadId: ThreadId): Promise<ChatIndex> {
+    const indexPath = indexPathOf(threadId);
+    const stored = await readIndex(indexPath);
+    if (stored !== null) return stored;
+    const index = indexOf(await readFileAt(pathOf(threadId), threadId));
+    await writeAtomically(indexPath, indexText(index));
+    return index;
   }
 
   return {
@@ -181,15 +264,8 @@ export function createClaudeThreadStore(directory: string, io: ThreadStoreIo = {
       requireSafeId(file.threadId);
       const path = pathOf(file.threadId);
       const checked = parseClaudeThreadFile(JSON.parse(JSON.stringify(file)), path, file.threadId);
-      await mkdir(directory, { recursive: true });
-      const temporary = `${path}.${process.pid}.${temporaryCounter++}.tmp`;
-      try {
-        await writeFile(temporary, `${JSON.stringify(checked, null, 2)}\n`, "utf8");
-        await io.rename(temporary, path);
-      } catch (error) {
-        await rm(temporary, { force: true });
-        throw error;
-      }
+      await writeAtomically(indexPathOf(file.threadId), indexText(indexOf(checked))); // first: an index without a chat file is never listed
+      await writeAtomically(path, `${JSON.stringify(checked, null, 2)}\n`);
     },
     async list() {
       let names: Array<string>;
@@ -199,13 +275,20 @@ export function createClaudeThreadStore(directory: string, io: ThreadStoreIo = {
         if (isMissingFile(error)) return [];
         throw error;
       }
-      const stored: Array<StoredThread> = [];
-      for (const name of names.filter((candidate) => candidate.endsWith(EXTENSION)).sort()) {
+      const chatNames = names.filter((candidate) => candidate.endsWith(EXTENSION) && !candidate.endsWith(INDEX_EXTENSION) && SAFE_THREAD_ID.test(candidate.slice(0, -EXTENSION.length))).sort();
+      const entries: Array<ChatListEntry> = [];
+      for (const name of chatNames) {
+        const threadId = asThreadId(name.slice(0, -EXTENSION.length));
         const path = join(directory, name);
-        const file = await readFileAt(path, asThreadId(name.slice(0, -EXTENSION.length)));
-        stored.push({ file, updatedAtMs: (await stat(path)).mtimeMs });
+        try {
+          const updatedAtMs = (await stat(path)).mtimeMs;
+          entries.push({ kind: "chat", threadId, ...(await indexFor(threadId)), updatedAtMs });
+        } catch (error) {
+          if (isMissingFile(error)) continue; // the chat was deleted between the listing and the read
+          entries.push({ kind: "unreadable", threadId, problem: error instanceof Error ? error.message : String(error), updatedAtMs: 0 });
+        }
       }
-      return stored;
+      return entries;
     },
   };
 }
