@@ -119,6 +119,7 @@ export class CodexClient {
   private readonly emptyWorkspacePath: string;
   private readonly resumable = new Set<ThreadId>();
   private readonly turns = new Map<TurnId, ThreadId>();
+  private readonly models = new Map<ThreadId, string>();
   private readonly forkParents = new Map<string, string | null>();
 
   constructor(options: CodexClientOptions) {
@@ -230,12 +231,23 @@ export class CodexClient {
   async startThread(options: Readonly<{ model: string }>): Promise<ThreadId> {
     requireText(options.model, "model");
     const { thread } = await this.connection.request("thread/start", { model: options.model, ...this.threadDefaults });
+    this.models.set(asThreadId(thread.id), options.model);
     return asThreadId(thread.id);
   }
 
-  async resumeThread(threadId: ThreadId): Promise<void> {
-    await this.connection.request("thread/resume", { threadId, ...this.threadDefaults });
+  /** The model is explicit on every thread, resumed ones included, because a missing model falls back to the user's config default, which can be rate limited. */
+  async resumeThread(threadId: ThreadId, model: string): Promise<void> {
+    requireText(model, "model");
+    await this.connection.request("thread/resume", { threadId, model, ...this.threadDefaults });
+    this.models.set(threadId, model);
     this.resumable.add(threadId);
+  }
+
+  /** The model this client last gave `threadId`; a restarted session resumes the thread with it. */
+  modelOf(threadId: ThreadId): string {
+    const model = this.models.get(threadId);
+    if (model === undefined) throw new Error(`no model is recorded for thread ${threadId}; start, fork or resume the thread through this client first`);
+    return model;
   }
 
   /**
@@ -245,6 +257,7 @@ export class CodexClient {
   async forkThread(threadId: ThreadId, lastTurnId: TurnId | null, model: string): Promise<ThreadId> {
     requireText(model, "model");
     const { thread } = await this.connection.request("thread/fork", { threadId, lastTurnId, model, ...this.threadDefaults });
+    this.models.set(asThreadId(thread.id), model);
     return asThreadId(thread.id);
   }
 

@@ -132,13 +132,35 @@ test("a_blank_model_is_rejected_before_any_request", async () => {
   expect(sent()).toEqual([]);
 });
 
-test("resume_sends_the_same_read_only_defaults_for_the_same_thread", async () => {
+test("resume_sends_an_explicit_model_and_the_same_read_only_defaults", async () => {
   const { fake, client, sent } = await setup();
   fake.respond("thread/resume", { thread: { id: THREAD_ID } });
 
-  await client.resumeThread(asThreadId(THREAD_ID));
+  await client.resumeThread(asThreadId(THREAD_ID), "gpt-5.6-sol");
 
-  expect(sent()[0]?.params).toEqual({ threadId: THREAD_ID, ...DEFAULTS });
+  expect(sent()[0]?.params).toEqual({ threadId: THREAD_ID, model: "gpt-5.6-sol", ...DEFAULTS });
+});
+
+test("resume_without_a_model_is_refused_before_any_request", async () => {
+  const { client, sent } = await setup();
+
+  await expect(client.resumeThread(asThreadId(THREAD_ID), " ")).rejects.toThrow(/model must not be empty/);
+
+  expect(sent()).toEqual([]);
+});
+
+test("the_model_of_a_started_forked_or_resumed_thread_is_remembered_and_an_unknown_thread_is_an_error", async () => {
+  const { fake, client } = await setup();
+  fake.respond("thread/start", { thread: { id: "a" } });
+  fake.respond("thread/fork", { thread: { id: "b" } });
+  fake.respond("thread/resume", { thread: { id: "c" } });
+
+  const started = await client.startThread({ model: "m-start" });
+  const forked = await client.forkThread(started, null, "m-fork");
+  await client.resumeThread(asThreadId("c"), "m-resume");
+
+  expect([client.modelOf(started), client.modelOf(forked), client.modelOf(asThreadId("c"))]).toEqual(["m-start", "m-fork", "m-resume"]);
+  expect(() => client.modelOf(asThreadId("zzz"))).toThrow(/no model is recorded for thread zzz/);
 });
 
 test("fork_sends_the_parent_the_last_turn_an_explicit_model_and_the_read_only_defaults", async () => {
@@ -333,7 +355,7 @@ test("crash_during_turn_restarts_and_resumes_the_thread", async () => {
     { type: "completed", threadId: THREAD_ID, turnId: TURN_ID, status: "failed", error: "Codex stopped unexpectedly. Retry" },
   ]);
   expect(second.received().map((message) => message.method)).toEqual(["initialize", "initialized", "config/read", "thread/resume"]);
-  expect(second.received()[3]?.params).toEqual({ threadId: THREAD_ID, ...DEFAULTS });
+  expect(second.received()[3]?.params).toEqual({ threadId: THREAD_ID, model: "gpt-5.6-sol", ...DEFAULTS });
 });
 
 test("after_a_restart_the_new_process_serves_requests_and_its_events_flow", async () => {

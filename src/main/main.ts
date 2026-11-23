@@ -102,7 +102,7 @@ function registerHandlers(starting: Promise<StartedCodex>): void {
     },
     threadOpen: async (threadId) => {
       const { client } = (await starting).supervisor;
-      await client.resumeThread(threadId);
+      await client.resumeThread(threadId, await client.defaultModelId());
       return toHistory(await client.readThread(threadId));
     },
     threadList: async () => listChats(await (await starting).supervisor.client.listThreads()).map(summarizeThread),

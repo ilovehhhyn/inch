@@ -77,7 +77,7 @@ export class CodexSupervisor {
     try {
       const session = await this.options.startSession();
       this.attach(session);
-      for (const threadId of threads) await session.client.resumeThread(threadId);
+      for (const threadId of threads) await session.client.resumeThread(threadId, dead.client.modelOf(threadId));
       this.state = "running";
       this.options.log(`restarted codex and resumed ${threads.length} thread(s)`);
     } catch (error) {
