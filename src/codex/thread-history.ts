@@ -37,16 +37,25 @@ function questionOf(storedText: string): string {
   return splitContextBlock(storedText)?.question ?? storedText;
 }
 
+/** Shown for a stored turn that has no completion record; the process that ran it is gone, so no answer is coming. */
+export const ANSWER_INTERRUPTED = "Answer interrupted";
+
+/** The assistant message of a stored turn; a turn left `inProgress` by a quit or a crash becomes a failed message that says so. */
+function assistantMessage(turn: Turn, answer: string): DisplayMessage | null {
+  const turnId = asTurnId(turn.id);
+  if (turn.status === "inProgress") return { turnId, role: "assistant", text: answer === "" ? ANSWER_INTERRUPTED : `${answer}${ANSWER_SEPARATOR}${ANSWER_INTERRUPTED}`, status: "failed" };
+  if (answer === "") return null;
+  return { turnId, role: "assistant", text: answer, status: turn.status === "failed" ? "failed" : "done" };
+}
+
 function turnMessages(turn: Turn): Array<DisplayMessage> {
-  if (turn.status === "inProgress") throw new Error(`turn ${turn.id} is still in progress; wait for it to finish before opening the thread`);
   const turnId = asTurnId(turn.id);
   const inputs = userInputs(turn.items);
   const { attachments: textAttachments, rest } = splitAttachmentBlocks(userText(inputs));
   const attachments = [...imageSummaries(inputs), ...textAttachments];
   const messages: Array<DisplayMessage> = [{ turnId, role: "user", text: questionOf(rest), status: "done", ...(attachments.length === 0 ? {} : { attachments }) }];
-  const answer = answerText(turn.items);
-  if (answer !== "") messages.push({ turnId, role: "assistant", text: answer, status: turn.status === "failed" ? "failed" : "done" });
-  return messages;
+  const reply = assistantMessage(turn, answerText(turn.items));
+  return reply === null ? messages : [...messages, reply];
 }
 
 export function toHistory(thread: Thread): Array<DisplayMessage> {

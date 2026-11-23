@@ -40,8 +40,21 @@ test("a_failed_turn_marks_its_answer_failed_and_an_interrupted_turn_is_done", ()
   expect(history.filter((message) => message.role === "assistant").map((message) => message.status)).toEqual(["failed", "done"]);
 });
 
-test("a_turn_still_in_progress_is_rejected_because_the_window_cannot_show_a_half_turn", () => {
-  expect(() => toHistory(thread([turn("t1", "inProgress", [userItem("q")])]))).toThrow(/turn t1 is still in progress/);
+test("a_turn_still_in_progress_in_a_stored_thread_shows_as_an_interrupted_answer_instead_of_failing_the_chat", () => {
+  const history = toHistory(thread([turn("t0", "completed", [userItem("first"), answerItem("a0")]), turn("t1", "inProgress", [userItem("q")])]));
+
+  expect(history.map((message) => [message.turnId, message.role, message.text, message.status])).toEqual([
+    ["t0", "user", "first", "done"],
+    ["t0", "assistant", "a0", "done"],
+    ["t1", "user", "q", "done"],
+    ["t1", "assistant", "Answer interrupted", "failed"],
+  ]);
+});
+
+test("an_in_progress_turn_keeps_the_text_it_had_and_says_it_was_interrupted", () => {
+  const history = toHistory(thread([turn("t1", "inProgress", [userItem("q"), answerItem("The step")])]));
+
+  expect(history.at(-1)).toEqual({ turnId: "t1", role: "assistant", text: "The step\n\nAnswer interrupted", status: "failed" });
 });
 
 test("items_other_than_messages_are_skipped_and_text_items_are_joined_without_a_separator", () => {
