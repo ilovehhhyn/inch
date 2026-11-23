@@ -1,0 +1,109 @@
+{
+ "threads": [
+  {
+   "id": "long-1",
+   "turns": [
+    {
+     "id": "seed-turn-1",
+     "user": "Question 1: what should I know about warmup schedules when I train a small language model?",
+     "assistant": "Answer 1. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 1. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 1. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 1. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 1. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 1. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-2",
+     "user": "Question 2: what should I know about learning-rate decay when I train a small language model?",
+     "assistant": "Answer 2. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 2. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 2. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 2. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 2. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 2. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-3",
+     "user": "Question 3: what should I know about batch size when I train a small language model?",
+     "assistant": "Answer 3. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 3. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 3. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 3. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 3. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 3. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-4",
+     "user": "Question 4: what should I know about gradient clipping when I train a small language model?",
+     "assistant": "Answer 4. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 4. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 4. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 4. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 4. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 4. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-5",
+     "user": "Question 5: what should I know about weight decay when I train a small language model?",
+     "assistant": "Answer 5. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 5. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 5. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 5. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 5. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 5. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-6",
+     "user": "Question 6: what should I know about data deduplication when I train a small language model?",
+     "assistant": "Answer 6. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 6. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 6. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 6. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 6. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 6. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-7",
+     "user": "Question 7: what should I know about evaluation splits when I train a small language model?",
+     "assistant": "Answer 7. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 7. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 7. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 7. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 7. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 7. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-8",
+     "user": "Question 8: what should I know about checkpointing when I train a small language model?",
+     "assistant": "Answer 8. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 8. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 8. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 8. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 8. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 8. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-9",
+     "user": "Question 9: what should I know about mixed precision when I train a small language model?",
+     "assistant": "Answer 9. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 9. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 9. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 9. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 9. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 9. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-10",
+     "user": "Question 10: what should I know about tokenizer choice when I train a small language model?",
+     "assistant": "Answer 10. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 10. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 10. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 10. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 10. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 10. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-11",
+     "user": "Question 11: what should I know about warmup schedules when I train a small language model?",
+     "assistant": "Answer 11. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 11. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 11. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 11. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 11. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 11. On warmup schedules: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-12",
+     "user": "Question 12: what should I know about learning-rate decay when I train a small language model?",
+     "assistant": "Answer 12. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 12. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 12. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 12. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 12. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 12. On learning-rate decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-13",
+     "user": "Question 13: what should I know about batch size when I train a small language model?",
+     "assistant": "Answer 13. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 13. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 13. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 13. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 13. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 13. On batch size: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-14",
+     "user": "Question 14: what should I know about gradient clipping when I train a small language model?",
+     "assistant": "Answer 14. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 14. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 14. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 14. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 14. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 14. On gradient clipping: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-15",
+     "user": "Question 15: what should I know about weight decay when I train a small language model?",
+     "assistant": "Answer 15. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 15. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 15. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 15. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 15. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 15. On weight decay: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-16",
+     "user": "Question 16: what should I know about data deduplication when I train a small language model?",
+     "assistant": "Answer 16. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 16. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 16. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 16. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 16. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 16. On data deduplication: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-17",
+     "user": "Question 17: what should I know about evaluation splits when I train a small language model?",
+     "assistant": "Answer 17. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 17. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 17. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 17. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 17. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 17. On evaluation splits: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-18",
+     "user": "Question 18: what should I know about checkpointing when I train a small language model?",
+     "assistant": "Answer 18. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 18. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 18. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 18. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 18. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 18. On checkpointing: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-19",
+     "user": "Question 19: what should I know about mixed precision when I train a small language model?",
+     "assistant": "Answer 19. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 19. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 19. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 19. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 19. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 19. On mixed precision: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    },
+    {
+     "id": "seed-turn-20",
+     "user": "Question 20: what should I know about tokenizer choice when I train a small language model?",
+     "assistant": "Answer 20. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 20. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 20. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 20. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 20. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs. Answer 20. On tokenizer choice: start from a setting that is known to work, change one factor at a time, and keep the other settings equal between runs."
+    }
+   ]
+  }
+ ]
+}

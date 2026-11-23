@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "electron-vite build && playwright test",
     "bindings:check": "bash scripts/generate-codex-bindings.sh --check"
   },
   "dependencies": {
